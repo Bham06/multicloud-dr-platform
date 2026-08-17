@@ -1,4 +1,4 @@
-# multicloud-dr
+# multicloud-dr-platform
 
 An active-passive multi-cloud disaster recovery system — **AWS primary, GCP
 secondary** — with observability/SLOs, policy-as-code, a FinOps pipeline, and a

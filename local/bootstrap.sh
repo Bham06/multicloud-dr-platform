@@ -38,13 +38,15 @@ if [[ -z "$REPO_URL" ]]; then
 ERROR: no Git remote found and REPO_URL is unset.
 
 Argo CD pulls desired state over the network; it cannot read your working copy.
-Either push this repo and set an origin:
 
-    gh repo create multicloud-dr --private --source=. --remote=origin --push
+This repo normally has an origin already. If you are working from a fresh
+clone or the remote was removed, restore it:
 
-...or point at an existing remote:
+    git remote add origin https://github.com/Bham06/multicloud-dr-platform.git
 
-    REPO_URL=https://github.com/<you>/multicloud-dr.git ./local/bootstrap.sh
+...or point this run at a different remote:
+
+    REPO_URL=https://github.com/<you>/<repo>.git ./local/bootstrap.sh
 EOF
   exit 1
 fi
