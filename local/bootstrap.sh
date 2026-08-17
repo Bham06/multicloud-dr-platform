@@ -106,6 +106,45 @@ install_argocd() {
     --wait --timeout 10m
 }
 
+configure_repo_creds() {
+  local ctx="$1" token
+
+  # Argo clones over HTTPS, so a private repo needs credentials in-cluster.
+  # The token is read from the gh CLI at bootstrap time and applied directly —
+  # it never lands in Git. Harmless if the repo is public (Argo just won't need
+  # it), so this runs unconditionally.
+  #
+  # The username is the literal `x-access-token`: GitHub ignores the username
+  # when the password is a token, so there is no need to look the account up.
+  # Avoiding that API call also means a GitHub outage cannot inject a garbage
+  # username into the Secret.
+  #
+  # NOTE: a user token carries broad `repo` scope. Fine for a local lab; the
+  # burst environment should use a deploy key or GitHub App scoped to this one
+  # repository instead. That swap is milestone 7 work.
+  token="$(gh auth token 2>/dev/null || true)"
+  if [[ -z "$token" ]]; then
+    log "[$ctx] No gh token found — assuming ${REPO_URL} is public"
+    return
+  fi
+
+  log "[$ctx] Installing Argo repository credentials"
+  kubectl --context "$ctx" apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-creds
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+stringData:
+  type: git
+  url: ${REPO_URL}
+  username: x-access-token
+  password: ${token}
+EOF
+}
+
 apply_root() {
   local ctx="$1" cluster="$2"
   log "[$ctx] Applying root ApplicationSet (repo: $REPO_URL)"
@@ -128,6 +167,7 @@ for cluster in "${CLUSTERS[@]}"; do
 
   ctx="$(context_for "$cluster")"
   install_argocd "$ctx"
+  configure_repo_creds "$ctx"
   apply_root "$ctx" "$cluster"
 done
 

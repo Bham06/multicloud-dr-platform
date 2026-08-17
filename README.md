@@ -67,13 +67,14 @@ and it is a stronger check than most production teams actually have.
 
 ## Quickstart
 
-Argo pulls over the network, so the repo needs a remote:
+**Prerequisites:** `docker` (≥4 GB allocated), `kubectl`, `helm`, `gh` (authenticated),
+and either `k3d` (default, lighter) or `kind`.
 
-```bash
-gh repo create multicloud-dr --private --source=. --remote=origin --push
-```
-
-Then:
+Argo CD pulls over the network — it cannot read your working copy — so the repo
+must be pushed. This one lives at `Bham06/multicloud-dr-platform`, and because
+it is **private**, `bootstrap.sh` reads a token from `gh auth token` and installs
+it as an Argo repository Secret. The token is applied directly to the cluster and
+never committed.
 
 ```bash
 make render     # render both overlays — no cluster needed
