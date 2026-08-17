@@ -1,0 +1,10 @@
+# Stands in for the EKS cluster.
+#
+# Single node on purpose: this substrate exists to exercise GitOps, policy and
+# failover mechanics, not scheduling. Node-level behaviour is validated during
+# a burst against real EKS, not here.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: aws-primary
+nodes:
+  - role: control-plane

@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-api
+  template:
+    metadata:
+      labels:
+        app: demo-api
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.12.0
+          args: ["--port=8080"]
+          ports:
+            - name: http
+              containerPort: 8080
+          # Cloud-specific facts arrive here. The base never names a cloud.
+          envFrom:
+            - configMapRef:
+                name: site
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          # Pre-satisfies the Pod Security "restricted" profile so the Kyverno
+          # policies in milestone 6 land on a workload that already complies.
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault

@@ -1,0 +1,60 @@
+# Argo CD — local substrate profile.
+#
+# Tuned for a constrained Docker VM. Requests total ~450Mi per cluster, so two
+# clusters fit alongside other work in a 4GB VM.
+#
+# The burst environment (real EKS/GKE) should use a different values file with
+# realistic limits and TLS terminated properly — this profile is local-only.
+
+# Not used by this project. Disabling them here means the pods are never
+# created, which is cleaner than installing them and scaling to zero.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+
+configs:
+  params:
+    # Local access is via `make ui` port-forward. In the burst environment TLS
+    # terminates at the ingress instead.
+    server.insecure: true
+
+controller:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
+server:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 192Mi
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi

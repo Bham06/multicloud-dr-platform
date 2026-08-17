@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The base is deliberately cloud-agnostic. If anything here ever names AWS or
+# GCP, portability has been broken and the DR story goes with it.
+resources:
+  - deployment.yaml
+  - service.yaml

@@ -1,0 +1,41 @@
+# Root ApplicationSet for the aws-primary cluster.
+#
+# Argo CD runs INSIDE this cluster and only ever deploys to itself
+# (destination is always in-cluster). There is no central control plane whose
+# outage could stop reconciliation here — that property is the whole reason
+# for the pull model, and it is what makes the standby trustworthy.
+#
+# The generator scans Git for `apps/*/overlays/aws-primary`. Creating that
+# directory for an app is what deploys it here. Deleting it removes it.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: __REPO_URL__
+        revision: HEAD
+        directories:
+          - path: apps/*/overlays/aws-primary
+  template:
+    metadata:
+      name: '{{index .path.segments 1}}'
+    spec:
+      project: default
+      source:
+        repoURL: __REPO_URL__
+        targetRevision: HEAD
+        path: '{{.path.path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{index .path.segments 1}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

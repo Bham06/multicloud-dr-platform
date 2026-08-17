@@ -1,0 +1,40 @@
+# Root ApplicationSet for the gcp-secondary cluster.
+#
+# Identical in structure to aws-primary — only the overlay path differs. That
+# symmetry is the point: the standby is not a special snowflake maintained by
+# hand, it is the same pipeline pointed at a different overlay directory.
+#
+# A standby that drifts from the primary's deployment mechanism is a standby
+# that will fail on the day you need it.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: __REPO_URL__
+        revision: HEAD
+        directories:
+          - path: apps/*/overlays/gcp-secondary
+  template:
+    metadata:
+      name: '{{index .path.segments 1}}'
+    spec:
+      project: default
+      source:
+        repoURL: __REPO_URL__
+        targetRevision: HEAD
+        path: '{{.path.path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{index .path.segments 1}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

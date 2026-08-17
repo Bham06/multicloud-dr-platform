@@ -1,0 +1,6 @@
+# Stands in for the GKE cluster (the passive side).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: gcp-secondary
+nodes:
+  - role: control-plane

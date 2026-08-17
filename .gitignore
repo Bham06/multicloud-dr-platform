@@ -1,0 +1,15 @@
+.DS_Store
+
+# Terraform — state can contain secrets and must never be committed
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+
+# Local scratch
+kubeconfig*
+*.local.yaml
