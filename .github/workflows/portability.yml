@@ -1,0 +1,32 @@
+name: portability
+
+# Portability is the property the entire DR strategy rests on, and it decays
+# silently — a cloud-specific value in a base breaks failover months before
+# anyone runs a game day. This runs the guard on every change.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.34.0
+
+      - name: Check portability
+        run: ./scripts/check-portability.sh
+
+      - name: Show what each cluster actually gets
+        if: success()
+        run: |
+          for o in apps/*/overlays/*; do
+            echo "::group::$o"
+            kubectl kustomize "$o"
+            echo "::endgroup::"
+          done

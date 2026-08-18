@@ -64,6 +64,7 @@ and it is a stronger check than most production teams actually have.
 | `docs/decisions/` | ADRs — the *why*. |
 | `docs/portability-register.md` | **The highest-value artifact here.** Every AWS dependency and its failover verdict. |
 | `docs/runbooks/failover.md` | The drill. Manual decision, automated steps. |
+| `scripts/check-portability.sh` | The guard. Fails the build when portability breaks. |
 
 ## Quickstart
 
@@ -77,7 +78,8 @@ it as an Argo repository Secret. The token is applied directly to the cluster an
 never committed.
 
 ```bash
-make render     # render both overlays — no cluster needed
+make check      # portability guard — no cluster needed (this is what CI runs)
+make render     # render both overlays
 make up         # two clusters, Argo CD in each, apps synced
 make status     # aws-primary 2/2 · gcp-secondary 0/0
 make diff       # prove the overlays differ only where they should
@@ -105,17 +107,22 @@ The active-passive posture, expressed as a single reviewable line.
 
 ## Roadmap
 
-| # | Milestone | Cost |
-| --- | --- | --- |
-| **1** | **Repo skeleton · 2 clusters · Argo syncing both overlays** | **$0** |
-| 2 | Portability register completed; overlays prove the split | $0 |
-| 3 | OTel + LGTM + first SLOs (Sloth) | $0 |
-| 4 | CloudNativePG logical replication; **replication lag as an SLI** | $0 |
-| 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 |
-| 6 | Kyverno, audit→warn→enforce; DORA control mapping + evidence | $0 |
-| 7 | Terraform for real AWS+GCP — **budget kill-switch first** | $0 |
-| 8 | Burst #1: real EKS + GKE + HA VPN + real failover, then destroy | ~$30 |
-| 9 | FinOps: FOCUS-normalize the real burst bills + OpenCost | ~$0 |
+| # | Milestone | Cost | Status |
+| --- | --- | --- | --- |
+| 1 | Repo skeleton · 2 clusters · Argo syncing both overlays | $0 | **done** |
+| 2 | Portability register resolved + enforced by a build guard | $0 | **done** |
+| 3 | CloudNativePG logical replication; **replication lag as an SLI** | $0 | next |
+| 4 | OTel + SLOs (Sloth), backend on Grafana Cloud free tier | $0 | |
+| 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 | |
+| 6 | Kyverno, audit→warn→enforce; DORA control mapping + evidence | $0 | |
+| 7 | Terraform for real AWS+GCP — **budget kill-switch first** | $0 | |
+| 8 | Burst #1: real EKS + GKE + HA VPN + real failover, then destroy | ~$30 | |
+| 9 | FinOps: FOCUS-normalize the real burst bills + OpenCost | ~$0 | |
+
+Data replication comes before observability, reversing the original order. Two
+reasons: the measured local budget (ADR 0002) does not fit a self-hosted LGTM
+stack, and replication lag is a more useful first SLI than a synthetic one — it
+means the metric exists before the framework meant to measure it.
 
 Milestone 5 is the one that matters: a working, measured DR drill before a
 single dollar is spent on real cloud.
@@ -126,8 +133,11 @@ single dollar is spent on real cloud.
   failover invites split brain on the data tier.
 - **The failover trigger lives outside both clouds.** Not Route 53 — the DR
   mechanism must not share a failure domain with the thing that is failing.
-- **Nothing in `apps/*/base/` may name a cloud.** If it does, portability is
-  broken and the DR story goes with it.
+- **Nothing in `apps/*/base/` may name a cloud** — including registry
+  hostnames. Enforced by `make check` and CI, not by good intentions:
+  portability decays silently, and you find out during a game day.
+- **Every app must have an overlay for every cluster.** An app on the primary
+  with no standby overlay is a workload that quietly will not come back.
 - **Replication lag is an SLI**, held to the same standard as availability.
 - **The standby's cost is a named, budgeted line item.** Otherwise it gets cut
   in a cost review and you find out during an incident.

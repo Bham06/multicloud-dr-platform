@@ -51,3 +51,40 @@ have an equivalent check.
   than faked locally.
 - k3s conveniences (traefik, servicelb, metrics-server) are disabled locally so
   the substrate does not drift from what EKS/GKE actually provide.
+
+## Measured, not estimated (2026-08-18)
+
+The local substrate now exists, so the estimates in this ADR have been replaced
+with real numbers from `make status` / `docker stats`:
+
+| | Estimated | **Measured** |
+| --- | --- | --- |
+| Per cluster (k3d node + trimmed Argo CD) | ~850 MB | **~1.13 GB** |
+| Both clusters | ~1.7 GB | **~2.27 GB** |
+| Docker VM allocation | — | 3.83 GB |
+| Headroom | — | **~1.55 GB** |
+
+The per-cluster estimate was low by roughly 30%. That matters for sequencing:
+
+| Milestone | Adds | Running total |
+| --- | --- | --- |
+| M1 clusters + Argo | — | 2.27 GB ✅ |
+| M3 CNPG + 2× Postgres | ~0.5 GB | ~2.8 GB ✅ |
+| M4 self-hosted LGTM stack | ~1.2–1.4 GB | **~4.0 GB ❌** |
+
+**A self-hosted observability stack does not fit.** Two consequences:
+
+1. Data replication moves ahead of observability in the roadmap — it fits, and
+   it produces replication lag as a real first SLI.
+2. Observability uses **Grafana Cloud's free tier** as the backend, with only
+   the OTel Collector in-cluster (~200 MB instead of ~1.4 GB). This is not a
+   concession: this ADR and the architecture both call for the observability
+   backend to live *outside both clouds*, so that a primary-side failure does
+   not take the dashboards with it. Self-hosting locally was always the
+   compromise; the RAM ceiling pushes toward the better design.
+
+Raising the Docker allocation is **not** the answer. Docker Desktop on Apple
+Silicon balloons — the VM held 0.58 GB RSS against a 3.83 GB allocation — so the
+cap is not what constrains it. The 8 GB host is, and it is already compressing
+3.2 GB and swapping 5.26 GB. Raising the cap converts a clean in-VM OOM kill
+into system-wide paging, which is strictly harder to diagnose.

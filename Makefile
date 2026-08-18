@@ -40,6 +40,10 @@ diff:
 		<(kubectl kustomize apps/demo-api/overlays/aws-primary) \
 		<(kubectl kustomize apps/demo-api/overlays/gcp-secondary) || true
 
+## check: run the portability guard (same check CI runs)
+check:
+	@./scripts/check-portability.sh
+
 ## render: render both overlays (fast feedback, no cluster needed)
 render:
 	@for o in apps/demo-api/overlays/*; do \
@@ -61,4 +65,4 @@ ui:
 mem:
 	@docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}'
 
-.PHONY: help up down status diff render password ui mem
+.PHONY: help up down status check diff render password ui mem
