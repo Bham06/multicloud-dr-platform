@@ -1,0 +1,52 @@
+# Platform components for the aws-primary cluster.
+#
+# Separate from apps.yaml because platform components have different sync
+# needs: their CRDs are large enough to break client-side apply, and resources
+# that depend on those CRDs must retry until the operator has installed them.
+#
+# Same directory-generator pattern though — adding platform/<name>/overlays/aws-primary
+# is what deploys a component here.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: __REPO_URL__
+        revision: HEAD
+        directories:
+          - path: platform/*/overlays/aws-primary
+  template:
+    metadata:
+      name: '{{index .path.segments 1}}'
+    spec:
+      project: default
+      source:
+        repoURL: __REPO_URL__
+        targetRevision: HEAD
+        path: '{{.path.path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{index .path.segments 1}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          # CNPG's CRDs exceed the 262144-byte last-applied-configuration
+          # annotation that client-side apply relies on.
+          - ServerSideApply=true
+        retry:
+          # Resources that need the operator's CRDs will fail until those CRDs
+          # exist. Retrying is how ordering is achieved without a hard
+          # dependency graph.
+          limit: 8
+          backoff:
+            duration: 15s
+            factor: 2
+            maxDuration: 3m

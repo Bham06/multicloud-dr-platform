@@ -13,3 +13,6 @@ override.tf.json
 # Local scratch
 kubeconfig*
 *.local.yaml
+
+# kustomize caches inflated helm charts next to the kustomization
+charts/

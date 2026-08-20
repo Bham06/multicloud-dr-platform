@@ -14,6 +14,10 @@ notifications:
   enabled: false
 
 configs:
+  cm:
+    # platform/* components inflate upstream Helm charts through Kustomize.
+    # Without this the repo-server refuses to run the helm inflator.
+    kustomize.buildOptions: --enable-helm
   params:
     # Local access is via `make ui` port-forward. In the burst environment TLS
     # terminates at the ingress instead.

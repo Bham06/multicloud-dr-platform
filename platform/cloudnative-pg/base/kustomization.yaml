@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The operator is identical on both sides — that is the point. The primary and
+# the standby run the same Postgres control plane, so a behaviour observed on
+# one reproduces on the other. Only the Cluster resources differ (see
+# platform/postgres).
+#
+# Inflated from the upstream chart rather than vendored: Argo's repo-server has
+# `kustomize.buildOptions: --enable-helm` set in local/argocd-values.yaml.
+namespace: cloudnative-pg
+
+helmCharts:
+  - name: cloudnative-pg
+    repo: https://cloudnative-pg.github.io/charts
+    version: 0.29.0        # -> operator 1.30.0
+    releaseName: cnpg
+    namespace: cloudnative-pg
+    includeCRDs: true
+    valuesInline:
+      # Sized for the local substrate (ADR 0002). The burst environment gets
+      # its own overlay with realistic limits.
+      resources:
+        requests:
+          cpu: 25m
+          memory: 96Mi
+        limits:
+          memory: 256Mi

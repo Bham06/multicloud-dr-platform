@@ -104,7 +104,7 @@ install_argocd() {
   helm --kube-context "$ctx" upgrade --install argocd argo/argo-cd \
     --version "$ARGOCD_CHART_VERSION" \
     --namespace argocd --create-namespace \
-    --values platform/argocd/values.yaml \
+    --values local/argocd-values.yaml \
     --wait --timeout 10m
 }
 
@@ -149,13 +149,47 @@ EOF
 
 apply_root() {
   local ctx="$1" cluster="$2"
-  log "[$ctx] Applying root ApplicationSet (repo: $REPO_URL)"
+  log "[$ctx] Applying root ApplicationSets (repo: $REPO_URL)"
   # The committed YAML stays portable; the concrete repo URL is injected here.
-  sed "s|__REPO_URL__|${REPO_URL}|g" "clusters/${cluster}/apps.yaml" \
-    | kubectl --context "$ctx" apply -f -
+  for set in apps platform; do
+    sed "s|__REPO_URL__|${REPO_URL}|g" "clusters/${cluster}/${set}.yaml" \
+      | kubectl --context "$ctx" apply -f -
+  done
 }
 
 # ---------------------------------------------------------------------------
+# The two clusters sit on separate Docker networks (172.18/16 and 172.20/16),
+# exactly as two cloud VPCs would. This third, non-overlapping network is the
+# local stand-in for the AWS<->GCP HA VPN: the only path between them.
+#
+# Static addresses because the Postgres subscriber needs a stable endpoint to
+# connect to, the same way the real config will reference a fixed VPN peer.
+# ---------------------------------------------------------------------------
+INTERCONNECT="${INTERCONNECT:-dr-interconnect}"
+declare -A INTERCONNECT_IP=( [aws-primary]=172.30.0.10 [gcp-secondary]=172.30.0.20 )
+
+setup_interconnect() {
+  if ! docker network inspect "$INTERCONNECT" >/dev/null 2>&1; then
+    log "Creating interconnect network ${INTERCONNECT} (172.30.0.0/16)"
+    docker network create --subnet 172.30.0.0/16 "$INTERCONNECT" >/dev/null
+  fi
+  for cluster in "${!INTERCONNECT_IP[@]}"; do
+    local container ip
+    case "$RUNTIME" in
+      k3d)  container="k3d-${cluster}-server-0" ;;
+      kind) container="${cluster}-control-plane" ;;
+    esac
+    docker inspect "$container" >/dev/null 2>&1 || continue
+    ip="${INTERCONNECT_IP[$cluster]}"
+    if docker network inspect "$INTERCONNECT" \
+         --format '{{range .Containers}}{{.Name}} {{end}}' | grep -qw "$container"; then
+      continue
+    fi
+    log "Attaching ${container} to ${INTERCONNECT} at ${ip}"
+    docker network connect --ip "$ip" "$INTERCONNECT" "$container"
+  done
+}
+
 log "Ensuring the argo Helm repo is present"
 helm repo add argo https://argoproj.github.io/argo-helm >/dev/null 2>&1 || true
 helm repo update argo >/dev/null
@@ -172,6 +206,9 @@ for cluster in "${CLUSTERS[@]}"; do
   configure_repo_creds "$ctx"
   apply_root "$ctx" "$cluster"
 done
+
+# Clusters exist now, so their containers can be wired together.
+setup_interconnect
 
 log "Done. Expected steady state:"
 cat <<EOF

@@ -2,14 +2,18 @@
 #
 # Portability guard.
 #
-# The README states that nothing in apps/*/base may name a cloud. A rule nobody
-# enforces decays within a month, and portability decays *silently* — you find
-# out during a game day, which is the expensive place to find out. This turns
-# the rule into a build failure.
+# The README states that nothing in a base may name a cloud, and that every
+# component must exist on every cluster. Rules nobody enforces decay within a
+# month, and portability decays *silently* — you find out during a game day,
+# which is the expensive place to find out. This turns the rules into a build
+# failure.
 #
-# Checks the RENDERED output rather than raw files: what matters is what
-# actually gets deployed, and rendering drops comments so prose about AWS/GCP
-# in a comment does not trip the guard.
+# Applies to apps/ and platform/ alike: a platform component missing from the
+# standby is just as fatal to failover as a missing app.
+#
+# Checks RENDERED output rather than raw files. What matters is what actually
+# gets deployed, and rendering drops comments, so prose about AWS/GCP in a
+# comment does not trip the guard.
 #
 #   ./scripts/check-portability.sh
 #
@@ -18,9 +22,21 @@ cd "$(dirname "$0")/.."
 
 RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[0;33m'; DIM=$'\033[2m'; OFF=$'\033[0m'
 fail_count=0
-
 fail() { printf '  %sFAIL%s %s\n' "$RED" "$OFF" "$*"; fail_count=$((fail_count + 1)); }
 pass() { printf '  %sok%s   %s\n' "$GREEN" "$OFF" "$*"; }
+
+# platform/* components inflate upstream Helm charts through Kustomize, matching
+# what Argo's repo-server does (kustomize.buildOptions in local/argocd-values.yaml).
+render() { kubectl kustomize --enable-helm "$1"; }
+
+# CRDs are API *definitions*, not configuration. Their embedded upstream schemas
+# document every Kubernetes volume type — awsElasticBlockStore, gcePersistentDisk,
+# `aws:kms` — as description text. Those are not deployment decisions and must
+# not be treated as portability breaks, so the cloud-name check skips CRD
+# documents. Everything an operator actually configures is still checked.
+strip_crds() {
+  awk 'BEGIN{RS="\n---\n"} !/(^|\n)kind: CustomResourceDefinition/ {print $0 "\n---"}'
+}
 
 # Anything that ties a manifest to one cloud. Deliberately broad — a false
 # positive costs a comment; a false negative costs a failed failover.
@@ -36,37 +52,33 @@ CLOUD_PATTERNS=(
 CLUSTERS=()
 while IFS= read -r d; do CLUSTERS+=("$(basename "$d")"); done < <(find clusters -mindepth 1 -maxdepth 1 -type d | sort)
 
-APPS=()
-while IFS= read -r d; do APPS+=("$(basename "$d")"); done < <(find apps -mindepth 1 -maxdepth 1 -type d | sort)
+# A component is any apps/<name> or platform/<name> that carries a base/.
+COMPONENTS=()
+while IFS= read -r d; do COMPONENTS+=("$d"); done < <(find apps platform -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
 
-printf '\n%sclusters:%s %s\n' "$DIM" "$OFF" "${CLUSTERS[*]}"
-printf '%sapps:%s     %s\n\n' "$DIM" "$OFF" "${APPS[*]}"
+printf '\n%sclusters:%s   %s\n' "$DIM" "$OFF" "${CLUSTERS[*]}"
+printf '%scomponents:%s %s\n\n' "$DIM" "$OFF" "${COMPONENTS[*]}"
 
 # ---------------------------------------------------------------------------
 printf '%s1. no cloud-specific values in any base%s\n' "$YELLOW" "$OFF"
 # ---------------------------------------------------------------------------
-for app in "${APPS[@]}"; do
-  base="apps/${app}/base"
-  [[ -d "$base" ]] || { fail "${app}: no base/ directory"; continue; }
-
-  if ! rendered="$(kubectl kustomize "$base" 2>&1)"; then
-    fail "${app}: base does not render"$'\n'"${rendered}"
+for comp in "${COMPONENTS[@]}"; do
+  base="${comp}/base"
+  [[ -d "$base" ]] || { fail "${comp}: no base/ directory"; continue; }
+  if ! rendered="$(render "$base" 2>/dev/null | strip_crds)" || [[ -z "$rendered" ]]; then
+    fail "${comp}: base does not render"$'\n'"$(printf '%s' "$rendered" | head -3 | sed 's/^/      /')"
     continue
   fi
-
   hits=""
   for pat in "${CLOUD_PATTERNS[@]}"; do
-    if match="$(printf '%s' "$rendered" | grep -inE "$pat" || true)"; then
-      [[ -n "$match" ]] && hits+="      ${match//$'\n'/$'\n'      }"$'\n'
-    fi
+    match="$(printf '%s' "$rendered" | grep -inE "$pat" || true)"
+    [[ -n "$match" ]] && hits+="      ${match//$'\n'/$'\n'      }"$'\n'
   done
-
   if [[ -n "$hits" ]]; then
-    fail "${app}: base names a cloud — portability is broken"
-    # One line can match several patterns; report it once.
+    fail "${comp}: base names a cloud — portability is broken"
     printf '%s' "$hits" | sort -u
   else
-    pass "${app}: base is cloud-agnostic"
+    pass "${comp}: base is cloud-agnostic"
   fi
 done
 
@@ -76,10 +88,12 @@ printf '\n%s2. no registry hostname in any base image%s\n' "$YELLOW" "$OFF"
 # CI pushes every image to both ECR and Artifact Registry, and each cluster
 # pulls from its own cloud. That makes the registry an OVERLAY concern: a base
 # that hardcodes a registry hostname pins the workload to one cloud.
-# A bare ref like `traefik/whoami:v1.12.0` is fine — the overlay supplies the
-# registry via kustomize's `images:` transformer.
-for app in "${APPS[@]}"; do
-  base="apps/${app}/base"
+#
+# Upstream charts legitimately ship fully-qualified refs, so platform/ is
+# exempt — the rule exists for images we build and publish ourselves.
+for comp in "${COMPONENTS[@]}"; do
+  [[ "$comp" == apps/* ]] || continue
+  base="${comp}/base"
   [[ -d "$base" ]] || continue
   bad=""
   while IFS= read -r img; do
@@ -89,29 +103,29 @@ for app in "${APPS[@]}"; do
     if [[ "$img" == */* && ( "$first" == *.* || "$first" == *:* ) ]]; then
       bad+="      ${img}"$'\n'
     fi
-  done < <(kubectl kustomize "$base" 2>/dev/null | grep -oE '^[[:space:]]*-?[[:space:]]*image:[[:space:]]*\S+' | awk '{print $NF}' | sort -u)
+  done < <(render "$base" 2>/dev/null | grep -oE '^[[:space:]]*-?[[:space:]]*image:[[:space:]]*\S+' | awk '{print $NF}' | sort -u)
   if [[ -n "$bad" ]]; then
-    fail "${app}: base pins a registry — that is an overlay concern"
+    fail "${comp}: base pins a registry — that is an overlay concern"
     printf '%s' "$bad"
   else
-    pass "${app}: base images carry no registry"
+    pass "${comp}: base images carry no registry"
   fi
 done
 
 # ---------------------------------------------------------------------------
-printf '\n%s3. every app deploys to every cluster%s\n' "$YELLOW" "$OFF"
+printf '\n%s3. every component deploys to every cluster%s\n' "$YELLOW" "$OFF"
 # ---------------------------------------------------------------------------
-# An app present on the primary but missing from the standby is a workload that
-# silently will not come back after failover. This is the check that catches it.
-for app in "${APPS[@]}"; do
+# A component present on the primary but missing from the standby silently will
+# not come back after failover. This is the check that catches it.
+for comp in "${COMPONENTS[@]}"; do
   missing=()
   for cluster in "${CLUSTERS[@]}"; do
-    [[ -d "apps/${app}/overlays/${cluster}" ]] || missing+=("$cluster")
+    [[ -d "${comp}/overlays/${cluster}" ]] || missing+=("$cluster")
   done
   if (( ${#missing[@]} )); then
-    fail "${app}: no overlay for ${missing[*]} — would not survive failover"
+    fail "${comp}: no overlay for ${missing[*]} — would not survive failover"
   else
-    pass "${app}: present on all ${#CLUSTERS[@]} clusters"
+    pass "${comp}: present on all ${#CLUSTERS[@]} clusters"
   fi
 done
 
@@ -121,28 +135,28 @@ printf '\n%s4. no overlay targets an unknown cluster%s\n' "$YELLOW" "$OFF"
 # An overlay whose name matches no cluster is dead code: no ApplicationSet
 # generator will ever select it, so it looks deployed but never is.
 orphans=0
-for app in "${APPS[@]}"; do
-  [[ -d "apps/${app}/overlays" ]] || continue
+for comp in "${COMPONENTS[@]}"; do
+  [[ -d "${comp}/overlays" ]] || continue
   while IFS= read -r d; do
     name="$(basename "$d")"
     known=0
     for cluster in "${CLUSTERS[@]}"; do [[ "$name" == "$cluster" ]] && known=1; done
-    (( known )) || { fail "${app}: overlay '${name}' matches no cluster in clusters/"; orphans=1; }
-  done < <(find "apps/${app}/overlays" -mindepth 1 -maxdepth 1 -type d | sort)
+    (( known )) || { fail "${comp}: overlay '${name}' matches no cluster in clusters/"; orphans=1; }
+  done < <(find "${comp}/overlays" -mindepth 1 -maxdepth 1 -type d | sort)
 done
 (( orphans )) || pass "all overlays map to a real cluster"
 
 # ---------------------------------------------------------------------------
 printf '\n%s5. every overlay renders%s\n' "$YELLOW" "$OFF"
 # ---------------------------------------------------------------------------
-for app in "${APPS[@]}"; do
+for comp in "${COMPONENTS[@]}"; do
   for cluster in "${CLUSTERS[@]}"; do
-    o="apps/${app}/overlays/${cluster}"
+    o="${comp}/overlays/${cluster}"
     [[ -d "$o" ]] || continue
-    if err="$(kubectl kustomize "$o" 2>&1 >/dev/null)"; then
-      pass "${app}/${cluster}"
+    if err="$(render "$o" 2>&1 >/dev/null)"; then
+      pass "${comp}/${cluster}"
     else
-      fail "${app}/${cluster} does not render: ${err}"
+      fail "${comp}/${cluster} does not render: $(printf '%s' "$err" | head -2)"
     fi
   done
 done
@@ -152,4 +166,4 @@ if (( fail_count )); then
   printf '\n%s%d check(s) failed.%s\n\n' "$RED" "$fail_count" "$OFF"
   exit 1
 fi
-printf '\n%sPortable.%s Base names no cloud; every app reaches every cluster.\n\n' "$GREEN" "$OFF"
+printf '\n%sPortable.%s No base names a cloud; every component reaches every cluster.\n\n' "$GREEN" "$OFF"
