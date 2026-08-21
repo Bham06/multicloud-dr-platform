@@ -34,6 +34,18 @@ status:
 	@kubectl --context $(CTX_SECONDARY) -n demo-api get deploy,pod 2>/dev/null || true
 	@echo
 
+## db-status: replication health across both clusters
+db-status:
+	@./scripts/replication-status.sh
+
+## db-load: write rows on the primary (make db-load N=500)
+db-load:
+	@./scripts/db-load.sh $(or $(N),500)
+
+## db-creds: give both clusters the same Postgres credential
+db-creds:
+	@./scripts/sync-db-credentials.sh
+
 ## diff: prove the two overlays differ only where they should
 diff:
 	@diff --color=always -u \
@@ -65,4 +77,4 @@ ui:
 mem:
 	@docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}'
 
-.PHONY: help up down status check diff render password ui mem
+.PHONY: help up down status check db-status db-load db-creds diff render password ui mem

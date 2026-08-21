@@ -65,6 +65,7 @@ and it is a stronger check than most production teams actually have.
 | `docs/portability-register.md` | **The highest-value artifact here.** Every AWS dependency and its failover verdict. |
 | `docs/runbooks/failover.md` | The drill. Manual decision, automated steps. |
 | `scripts/check-portability.sh` | The guard. Fails the build when portability breaks. |
+| `scripts/replication-status.sh` | Replication health across both clusters. Surfaces sequence divergence. |
 
 ## Quickstart
 
@@ -83,6 +84,8 @@ make render     # render both overlays
 make up         # two clusters, Argo CD in each, apps synced
 make status     # aws-primary 2/2 · gcp-secondary 0/0
 make diff       # prove the overlays differ only where they should
+make db-status  # replication health across both clusters
+make db-load    # write rows on the primary (make db-load N=500)
 make down
 ```
 
@@ -105,14 +108,41 @@ Failover is one integer in Git:
 
 The active-passive posture, expressed as a single reviewable line.
 
+## What milestone 3 demonstrates
+
+Postgres runs on both clusters, with row changes replicating from the primary
+to the standby over the interconnect — a third Docker network standing in for
+the AWS↔GCP VPN, since the two clusters otherwise sit on isolated subnets
+exactly as two VPCs would.
+
+Two traps are made concrete rather than described:
+
+**DDL does not replicate.** The schema lives in `platform/postgres/base` and is
+applied to both clusters by Git. A migration applied only to the primary breaks
+the standby silently.
+
+**Sequences do not replicate.** After writing 501 rows:
+
+```
+                        aws-primary  gcp-secondary
+  rows in orders                501            501
+  max(id)                       501            501
+  orders_id_seq                 501              1   <- diverged
+```
+
+Every row is present. Promote the standby as-is and the first INSERT tries
+`id=2`, colliding with a row replication already delivered. A failover that
+looks perfect and corrupts on the first write — which is why the promotion
+runbook resets sequences explicitly.
+
 ## Roadmap
 
 | # | Milestone | Cost | Status |
 | --- | --- | --- | --- |
 | 1 | Repo skeleton · 2 clusters · Argo syncing both overlays | $0 | **done** |
 | 2 | Portability register resolved + enforced by a build guard | $0 | **done** |
-| 3 | CloudNativePG logical replication; **replication lag as an SLI** | $0 | next |
-| 4 | OTel + SLOs (Sloth), backend on Grafana Cloud free tier | $0 | |
+| 3 | CloudNativePG logical replication; **replication lag as an SLI** | $0 | **done** |
+| 4 | OTel + SLOs (Sloth), backend on Grafana Cloud free tier | $0 | next |
 | 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 | |
 | 6 | Kyverno, audit→warn→enforce; DORA control mapping + evidence | $0 | |
 | 7 | Terraform for real AWS+GCP — **budget kill-switch first** | $0 | |

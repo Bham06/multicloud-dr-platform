@@ -39,11 +39,46 @@ Verify:
 make status
 ```
 
-## 3. Promote the database _(milestone 4)_
+## 3. Promote the database
 
-- [ ] Confirm replication lag is within RPO **before** promoting
-- [ ] Promote the Cloud SQL replica to standalone
-- [ ] Verify sequences and extensions survived (a classic logical-replication gap)
+Check lag **before** promoting — this is the RPO decision, and it is the one
+step that cannot be undone:
+
+```bash
+make db-status
+```
+
+- [ ] `slot active` and `subscriber up` are both green. A stopped subscriber
+      reports *zero* lag while falling arbitrarily far behind, so never read
+      lag alone.
+- [ ] Lag is within RPO (target: minutes).
+
+Then drop the subscription so the new primary stops trying to pull from a
+publisher that is gone:
+
+```sql
+ALTER SUBSCRIPTION app_sub DISABLE;
+ALTER SUBSCRIPTION app_sub SET (slot_name = NONE);
+DROP SUBSCRIPTION app_sub;
+```
+
+**Then reset every sequence. This step is not optional.**
+
+```sql
+SELECT setval('orders_id_seq', (SELECT max(id) FROM orders));
+```
+
+Logical replication carries rows, not sequence values. The standby's
+`orders_id_seq` sits at its bootstrap value while the table already holds
+replicated ids — verified in M3 at 501 rows with the sequence still at 1.
+Promote without this and the first INSERT collides with a row replication
+already delivered.
+
+This is the failure mode that makes a failover look *successful*: every row
+present, every check green, and the database corrupts on the first write.
+It is also why failover is a runbook and not a replica count.
+
+- [ ] Every sequence in the schema reset, not just `orders_id_seq`
 - [ ] Point the app at the promoted endpoint
 
 ## 4. Cut traffic over _(milestone 5)_
