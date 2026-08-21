@@ -1,0 +1,21 @@
+# Exposes the current primary across the interconnect so the standby's
+# subscriber can reach it. Locally this is a NodePort on the node's
+# 172.30.0.10 address; in the burst environment the equivalent is the RDS
+# endpoint reachable over the HA VPN.
+#
+# The selector targets cnpg.io/instanceRole=primary rather than a fixed pod,
+# so if CNPG promotes a different instance the Service follows it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pg-interconnect
+spec:
+  type: NodePort
+  selector:
+    cnpg.io/cluster: pg
+    cnpg.io/instanceRole: primary
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      nodePort: 30432

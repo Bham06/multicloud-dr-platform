@@ -1,5 +1,41 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: postgres
+
 resources:
   - ../../base
+  - subscription.yaml
+
+patches:
+  # Where the publisher lives. Environment-specific by nature: the interconnect
+  # address here, the RDS endpoint over the VPN in the burst environment.
+  # The credential is the same one scripts/sync-db-credentials.sh put on both
+  # clusters — the subscriber authenticates as an ordinary app user.
+  - target:
+      kind: Cluster
+      name: pg
+    patch: |-
+      - op: add
+        path: /spec/externalClusters
+        value:
+          - name: aws-primary-pg
+            connectionParameters:
+              host: "172.30.0.10"
+              port: "30432"
+              user: app
+              dbname: app
+              sslmode: require
+            password:
+              name: pg-app-credentials
+              key: password
+  # Kept symmetrical with the primary so this side can publish after a
+  # failover reverses the roles. A standby that cannot become a publisher
+  # makes failback impossible.
+  - target:
+      kind: Cluster
+      name: pg
+    patch: |-
+      - op: add
+        path: /spec/postgresql/pg_hba
+        value:
+          - host app app 172.30.0.0/16 scram-sha-256

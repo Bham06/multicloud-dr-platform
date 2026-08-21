@@ -5,6 +5,11 @@ metadata:
 spec:
   instances: 1
 
+  # Pinned to what the operator chose on first run. Left unpinned it drifts
+  # with the operator version, which would make a "works on the primary,
+  # fails on the standby" divergence possible during a staggered upgrade.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie
+
   postgresql:
     parameters:
       # Required for logical replication. Set on BOTH sides, not just the

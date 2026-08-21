@@ -1,0 +1,17 @@
+# The publisher side of logical replication.
+#
+# allTables means new tables are picked up automatically — but only tables
+# that exist when the publication is created, plus any added later. It does
+# NOT create those tables on the subscriber; that is what the shared schema
+# in platform/postgres/base is for.
+apiVersion: postgresql.cnpg.io/v1
+kind: Publication
+metadata:
+  name: app-pub
+spec:
+  cluster:
+    name: pg
+  dbname: app
+  name: app_pub
+  target:
+    allTables: true

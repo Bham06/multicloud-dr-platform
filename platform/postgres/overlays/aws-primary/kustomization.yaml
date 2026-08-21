@@ -1,5 +1,21 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: postgres
+
 resources:
   - ../../base
+  - interconnect-service.yaml
+  - publication.yaml
+
+# The peer CIDR is environment-specific (the interconnect locally, the VPN
+# peer range in the burst environment), so it belongs in the overlay rather
+# than the base.
+patches:
+  - target:
+      kind: Cluster
+      name: pg
+    patch: |-
+      - op: add
+        path: /spec/postgresql/pg_hba
+        value:
+          - host app app 172.30.0.0/16 scram-sha-256
