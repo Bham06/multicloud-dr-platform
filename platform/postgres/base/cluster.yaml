@@ -67,4 +67,9 @@ spec:
     limits:
       memory: 400Mi
 
+  monitoring:
+    customQueriesConfigMap:
+      - name: pg-dr-metrics
+        key: dr.yaml
+
   enableSuperuserAccess: false

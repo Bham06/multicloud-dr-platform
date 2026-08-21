@@ -1,0 +1,51 @@
+# Replication lag as a first-class metric.
+#
+# The README commits to "replication lag is an SLI, held to the same standard
+# as availability". That requires the number to exist before M4 builds the SLO
+# framework around it — a target you cannot measure is a target you cannot
+# claim.
+#
+# One ConfigMap for both sides. Each query returns rows only where it applies:
+# the publisher has slots, the subscriber has subscriptions. After a failover
+# reverses the roles, the same config keeps working.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pg-dr-metrics
+data:
+  dr.yaml: |
+    dr_replication_slot:
+      query: |
+        SELECT slot_name,
+               coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn), 0)::float8 AS lag_bytes,
+               CASE WHEN active THEN 1 ELSE 0 END AS active
+        FROM pg_replication_slots
+        WHERE slot_type = 'logical'
+      metrics:
+        - slot_name:
+            usage: "LABEL"
+            description: "Logical replication slot name"
+        - lag_bytes:
+            usage: "GAUGE"
+            description: "WAL bytes written but not yet confirmed by the subscriber. This is RPO exposure in bytes."
+        - active:
+            usage: "GAUGE"
+            description: "1 when a subscriber is connected to this slot. 0 means replication has stopped."
+
+    dr_subscription:
+      query: |
+        SELECT s.subname,
+               coalesce(extract(epoch from (now() - st.latest_end_time)), 0)::float8 AS lag_seconds,
+               CASE WHEN st.pid IS NOT NULL THEN 1 ELSE 0 END AS worker_up
+        FROM pg_subscription s
+        LEFT JOIN pg_stat_subscription st ON st.subid = s.oid
+      metrics:
+        - subname:
+            usage: "LABEL"
+            description: "Subscription name"
+        - lag_seconds:
+            usage: "GAUGE"
+            description: "Seconds since the last change was applied from the publisher. This is RPO exposure in time."
+        - worker_up:
+            usage: "GAUGE"
+            description: "1 when the apply worker is running. 0 means the standby is silently falling behind."
