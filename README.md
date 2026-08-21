@@ -66,6 +66,7 @@ and it is a stronger check than most production teams actually have.
 | `docs/runbooks/failover.md` | The drill. Manual decision, automated steps. |
 | `scripts/check-portability.sh` | The guard. Fails the build when portability breaks. |
 | `scripts/replication-status.sh` | Replication health across both clusters. Surfaces sequence divergence. |
+| `scripts/check-sequences.sh` | Pre-promotion gate: every sequence that would break writes, and the fix. |
 
 ## Quickstart
 

@@ -64,19 +64,42 @@ DROP SUBSCRIPTION app_sub;
 
 **Then reset every sequence. This step is not optional.**
 
-```sql
-SELECT setval('orders_id_seq', (SELECT max(id) FROM orders));
+```bash
+./scripts/check-sequences.sh              # what would break
+./scripts/check-sequences.sh --apply      # repair it
 ```
 
-Logical replication carries rows, not sequence values. The standby's
-`orders_id_seq` sits at its bootstrap value while the table already holds
-replicated ids — verified in M3 at 501 rows with the sequence still at 1.
-Promote without this and the first INSERT collides with a row replication
-already delivered.
+Do not hand-write `setval` per table. A real schema has dozens of sequences;
+you fix the two you remember and the third fails weeks later. The script walks
+`pg_depend`, so it covers `serial`, `bigserial` and `GENERATED ... AS IDENTITY`
+alike and cannot miss one.
 
-This is the failure mode that makes a failover look *successful*: every row
-present, every check green, and the database corrupts on the first write.
-It is also why failover is a runbook and not a replica count.
+**This step belongs here and nowhere earlier.** Repairing sequences ahead of
+time does not hold: one further write on the old primary re-diverges the
+standby immediately. It is only valid once writes have stopped — which is why
+step 1 (freeze the primary) must genuinely have taken effect first.
+
+Logical replication carries rows, not sequence values, and this is not
+configurable: PostgreSQL 18.4's `pg_publication` has no sequence support at
+all — `CREATE PUBLICATION ... FOR ALL SEQUENCES` is a syntax error.
+
+**The failure self-heals, which is what makes it dangerous.** Sequences are
+non-transactional, so every *failed* insert still burns a value. Measured on
+this substrate with 1001 rows and the sequence at 1:
+
+```
+attempt 1: ERROR:  duplicate key value violates unique constraint "orders_pkey"
+attempt 2: ERROR:  duplicate key value violates unique constraint "orders_pkey"
+attempt 3: ERROR:  duplicate key value violates unique constraint "orders_pkey"
+sequence after three failed attempts: 3
+998 more failures, then success
+```
+
+After `max(id) - last_value` attempts the collisions stop and writes start
+succeeding. Alerting sees a burst of errors that recovers on its own, no root
+cause survives, and every one of those attempts was a lost write. A clean,
+permanent failure would be *safer* — it would still be broken when someone
+came to look.
 
 - [ ] Every sequence in the schema reset, not just `orders_id_seq`
 - [ ] Point the app at the promoted endpoint

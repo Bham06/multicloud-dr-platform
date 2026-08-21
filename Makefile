@@ -42,6 +42,10 @@ db-status:
 db-load:
 	@./scripts/db-load.sh $(or $(N),500)
 
+## db-sequences: find sequences that would break writes after promotion
+db-sequences:
+	@./scripts/check-sequences.sh
+
 ## db-creds: give both clusters the same Postgres credential
 db-creds:
 	@./scripts/sync-db-credentials.sh
@@ -77,4 +81,4 @@ ui:
 mem:
 	@docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}'
 
-.PHONY: help up down status check db-status db-load db-creds diff render password ui mem
+.PHONY: help up down status check db-status db-load db-sequences db-creds diff render password ui mem
