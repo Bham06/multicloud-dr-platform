@@ -32,6 +32,15 @@ spec:
       destination:
         server: https://kubernetes.default.svc
         namespace: '{{index .path.segments 1}}'
+      # CNPG's operator appends its own default monitoring queries to the
+      # Cluster spec after admission. Without this, selfHeal strips the
+      # operator's entry, the operator re-adds it, and the two fight forever
+      # while the Application never reports Synced.
+      ignoreDifferences:
+        - group: postgresql.cnpg.io
+          kind: Cluster
+          jsonPointers:
+            - /spec/monitoring/customQueriesConfigMap
       syncPolicy:
         automated:
           prune: true
