@@ -32,6 +32,11 @@ spec:
                 configMapKeyRef:
                   name: otel-cluster-facts
                   key: remoteWriteEndpoint
+            - name: DR_ROLE
+              valueFrom:
+                configMapKeyRef:
+                  name: otel-cluster-facts
+                  key: drRole
           volumeMounts:
             - name: config
               mountPath: /conf

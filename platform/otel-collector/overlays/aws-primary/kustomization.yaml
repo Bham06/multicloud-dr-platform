@@ -8,6 +8,7 @@ configMapGenerator:
     behavior: create
     literals:
       - cluster=aws-primary
+      - drRole=primary
       - remoteWriteEndpoint=http://172.30.0.20:30909/api/v1/write
 generatorOptions:
   disableNameSuffixHash: true

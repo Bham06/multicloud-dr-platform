@@ -233,8 +233,8 @@ groups:
       sloth_severity: page
     annotations:
       runbook: docs/runbooks/failover.md
-      summary: Replication from aws-primary to gcp-secondary is stale or stopped.
-        RPO is not being met; a failover now would lose data.
+      summary: Replication from the primary to the standby is stale or stopped. RPO
+        is not being met; a failover now would lose data.
       title: (page) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
         burn rate is too fast.
   - alert: DRReplicationStale
@@ -256,18 +256,18 @@ groups:
       sloth_severity: ticket
     annotations:
       runbook: docs/runbooks/failover.md
-      summary: Replication from aws-primary to gcp-secondary is stale or stopped.
-        RPO is not being met; a failover now would lose data.
+      summary: Replication from the primary to the standby is stale or stopped. RPO
+        is not being met; a failover now would lose data.
       title: (ticket) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
         burn rate is too fast.
 - name: sloth-slo-sli-recordings-dr-demo-api-availability
   rules:
   - record: slo:sli_error:ratio_rate5m
     expr: |
-      (sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[5m]))
+      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[5m]))
       )
       /
-      (sum(rate(httpcheck_status{cluster="aws-primary"}[5m]))
+      (sum(rate(httpcheck_status{dr_role="primary"}[5m]))
       )
     labels:
       owner: platform
@@ -277,10 +277,10 @@ groups:
       sloth_window: 5m
   - record: slo:sli_error:ratio_rate30m
     expr: |
-      (sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[30m]))
+      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[30m]))
       )
       /
-      (sum(rate(httpcheck_status{cluster="aws-primary"}[30m]))
+      (sum(rate(httpcheck_status{dr_role="primary"}[30m]))
       )
     labels:
       owner: platform
@@ -290,10 +290,10 @@ groups:
       sloth_window: 30m
   - record: slo:sli_error:ratio_rate1h
     expr: |
-      (sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[1h]))
+      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[1h]))
       )
       /
-      (sum(rate(httpcheck_status{cluster="aws-primary"}[1h]))
+      (sum(rate(httpcheck_status{dr_role="primary"}[1h]))
       )
     labels:
       owner: platform
@@ -303,10 +303,10 @@ groups:
       sloth_window: 1h
   - record: slo:sli_error:ratio_rate2h
     expr: |
-      (sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[2h]))
+      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[2h]))
       )
       /
-      (sum(rate(httpcheck_status{cluster="aws-primary"}[2h]))
+      (sum(rate(httpcheck_status{dr_role="primary"}[2h]))
       )
     labels:
       owner: platform
@@ -316,10 +316,10 @@ groups:
       sloth_window: 2h
   - record: slo:sli_error:ratio_rate6h
     expr: |
-      (sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[6h]))
+      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[6h]))
       )
       /
-      (sum(rate(httpcheck_status{cluster="aws-primary"}[6h]))
+      (sum(rate(httpcheck_status{dr_role="primary"}[6h]))
       )
     labels:
       owner: platform
@@ -329,10 +329,10 @@ groups:
       sloth_window: 6h
   - record: slo:sli_error:ratio_rate1d
     expr: |
-      (sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[1d]))
+      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[1d]))
       )
       /
-      (sum(rate(httpcheck_status{cluster="aws-primary"}[1d]))
+      (sum(rate(httpcheck_status{dr_role="primary"}[1d]))
       )
     labels:
       owner: platform
@@ -342,10 +342,10 @@ groups:
       sloth_window: 1d
   - record: slo:sli_error:ratio_rate3d
     expr: |
-      (sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[3d]))
+      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[3d]))
       )
       /
-      (sum(rate(httpcheck_status{cluster="aws-primary"}[3d]))
+      (sum(rate(httpcheck_status{dr_role="primary"}[3d]))
       )
     labels:
       owner: platform
@@ -446,7 +446,7 @@ groups:
       severity: page
       sloth_severity: page
     annotations:
-      summary: demo-api on aws-primary is failing HTTP probes.
+      summary: demo-api on the active cluster is failing HTTP probes.
       title: (page) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
         burn rate is too fast.
   - alert: DemoAPIUnavailable
@@ -467,6 +467,6 @@ groups:
       severity: ticket
       sloth_severity: ticket
     annotations:
-      summary: demo-api on aws-primary is failing HTTP probes.
+      summary: demo-api on the active cluster is failing HTTP probes.
       title: (ticket) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
         burn rate is too fast.

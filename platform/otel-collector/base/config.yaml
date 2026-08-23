@@ -54,6 +54,17 @@ data:
           - key: cluster
             value: ${env:CLUSTER_NAME}
             action: upsert
+          # Which side is ACTIVE. Deliberately a role rather than a cluster
+          # identity: an SLO filtered on a specific cluster silently stops
+          # measuring the serving side the moment failover happens, which is
+          # precisely when it matters most. This label flips in Git as part
+          # of the failover change, so SLOs follow the traffic.
+          #
+          # (Comments inside a ConfigMap blob are indistinguishable from
+          # config to the portability guard, so this one names no cluster.)
+          - key: dr_role
+            value: ${env:DR_ROLE}
+            action: upsert
 
     exporters:
       prometheusremotewrite:

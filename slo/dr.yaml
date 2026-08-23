@@ -1,27 +1,34 @@
 # SLO definitions, in Sloth's spec format.
 #
-# Committed as source. The generated Prometheus rules are committed alongside
-# them so both are reviewable in a PR — the README's claim that SLOs are code
-# only means something if the rules a reviewer sees are the rules that run.
+# Committed as source, with the generated Prometheus rules committed alongside
+# them. The README's claim that SLOs are code only means something if the rules
+# a reviewer reads in a PR are the rules that actually run.
+#
+# Regenerate with `make slo` after editing.
+#
+# NOTE: no cluster name appears anywhere in this file, including in prose —
+# Sloth bakes descriptions into rule annotations, so they end up in a base and
+# the portability guard rejects them. That constraint is doing real work here:
+# see the dr_role note on the availability SLO.
 version: prometheus/v1
 service: dr
 labels:
   owner: platform
 slos:
   # ---------------------------------------------------------------------
-  # The DR SLO. Replication lag is the RPO exposure, so this is the SLI
+  # The DR SLO. Replication lag IS the RPO exposure, so this is the SLI
   # that says whether the standby is actually usable.
   #
-  # Health is BOTH conditions: worker up AND lag inside RPO. Lag alone is
-  # the trap — a stopped subscriber reports lag 0 while falling
+  # Health requires BOTH conditions: worker up AND lag inside RPO. Lag
+  # alone is the trap — a stopped subscriber reports lag 0 while falling
   # arbitrarily far behind, so a lag-only SLI reads healthiest at exactly
   # the moment replication has died.
   # ---------------------------------------------------------------------
   - name: replication-freshness
     objective: 99.0
     description: >-
-      The gcp-secondary standby is receiving changes from aws-primary and is
-      within the RPO target of minutes.
+      The standby is receiving changes from the primary and is within the RPO
+      target of minutes.
     sli:
       raw:
         error_ratio_query: |
@@ -42,8 +49,8 @@ slos:
       annotations:
         runbook: docs/runbooks/failover.md
         summary: >-
-          Replication from aws-primary to gcp-secondary is stale or stopped.
-          RPO is not being met; a failover now would lose data.
+          Replication from the primary to the standby is stale or stopped. RPO
+          is not being met; a failover now would lose data.
       page_alert:
         labels:
           severity: page
@@ -52,10 +59,16 @@ slos:
           severity: ticket
 
   # ---------------------------------------------------------------------
-  # Availability of the active side, probed by the collector's httpcheck
-  # receiver. Scoped to aws-primary on purpose: gcp-secondary runs the
-  # pilot light at zero replicas, so its probe fails BY DESIGN and must
-  # not burn error budget.
+  # Availability of whichever side is currently ACTIVE, probed by the
+  # collector's httpcheck receiver.
+  #
+  # Filtered on dr_role="primary" and never on a cluster name. The standby
+  # runs the pilot light at zero replicas, so its probe fails by design and
+  # must not burn error budget. But hardcoding the active cluster's name
+  # would mean this SLO keeps measuring the demoted side after a failover
+  # and stops measuring the one actually serving traffic — broken at
+  # precisely the moment it matters most. The role label flips in Git as
+  # part of the failover change, so the SLO follows the traffic.
   # ---------------------------------------------------------------------
   - name: demo-api-availability
     objective: 99.5
@@ -64,15 +77,15 @@ slos:
     sli:
       events:
         error_query: |
-          sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[{{.window}}]))
+          sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[{{.window}}]))
         total_query: |
-          sum(rate(httpcheck_status{cluster="aws-primary"}[{{.window}}]))
+          sum(rate(httpcheck_status{dr_role="primary"}[{{.window}}]))
     alerting:
       name: DemoAPIUnavailable
       labels:
         pillar: availability
       annotations:
-        summary: demo-api on aws-primary is failing HTTP probes.
+        summary: demo-api on the active cluster is failing HTTP probes.
       page_alert:
         labels:
           severity: page

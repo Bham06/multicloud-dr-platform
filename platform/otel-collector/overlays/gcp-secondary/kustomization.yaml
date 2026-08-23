@@ -8,6 +8,7 @@ configMapGenerator:
     behavior: create
     literals:
       - cluster=gcp-secondary
+      - drRole=standby
       - remoteWriteEndpoint=http://prometheus-server.prometheus.svc.cluster.local/api/v1/write
 generatorOptions:
   disableNameSuffixHash: true
