@@ -45,12 +45,16 @@ Check lag **before** promoting — this is the RPO decision, and it is the one
 step that cannot be undone:
 
 ```bash
-make db-status
+make db-status    # slot/worker liveness, lag, row counts, sequences
+make slo-status   # burn rate and whether DRReplicationStale is firing
 ```
 
 - [ ] `slot active` and `subscriber up` are both green. A stopped subscriber
       reports *zero* lag while falling arbitrarily far behind, so never read
       lag alone.
+- [ ] Row counts agreeing is **not** evidence of health. With no writes in
+      flight both sides agree perfectly while replication is dead — observed
+      during the M4 drill.
 - [ ] Lag is within RPO (target: minutes).
 
 Then drop the subscription so the new primary stops trying to pull from a

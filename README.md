@@ -67,6 +67,8 @@ and it is a stronger check than most production teams actually have.
 | `scripts/check-portability.sh` | The guard. Fails the build when portability breaks. |
 | `scripts/replication-status.sh` | Replication health across both clusters. Surfaces sequence divergence. |
 | `scripts/check-sequences.sh` | Pre-promotion gate: every sequence that would break writes, and the fix. |
+| `scripts/slo-status.sh` | SLO burn rate, error budget, firing alerts. |
+| `slo/dr.yaml` | SLO definitions. `make slo` regenerates the Prometheus rules. |
 
 ## Quickstart
 
@@ -87,6 +89,7 @@ make status     # aws-primary 2/2 · gcp-secondary 0/0
 make diff       # prove the overlays differ only where they should
 make db-status  # replication health across both clusters
 make db-load    # write rows on the primary (make db-load N=500)
+make slo-status # SLO burn rate, error budget, firing alerts
 make down
 ```
 
@@ -136,6 +139,39 @@ Every row is present. Promote the standby as-is and the first INSERT tries
 looks perfect and corrupts on the first write — which is why the promotion
 runbook resets sequences explicitly.
 
+## What milestone 4 demonstrates
+
+OTel collectors on both clusters push to a single Prometheus on the passive
+side, which evaluates Sloth-generated multi-window burn-rate rules.
+
+Verified by breaking replication on purpose:
+
+```
+                     rows      slot        subscriber
+  before             1302/1302 active      up (1.04s)
+  subscription off   1302/1002 INACTIVE    DOWN
+
+  SLO                     TARGET   ERR 5m    BURN
+  replication-freshness    99.0%  100.00%  100.00x
+  demo-api-availability    99.5%    0.00%    0.00x   <- correctly unaffected
+
+  FIRING  DRReplicationStale  severity=page
+          DRReplicationStale  severity=ticket
+```
+
+Re-enabling the subscription caught up from retained WAL and the alert
+cleared.
+
+Two details that matter more than the alert firing:
+
+**`replication-status.sh` reported "In sync — 1002 rows on both sides" while
+replication was dead.** Nothing was writing, so the row counts agreed
+perfectly. Row equality is not a health check.
+
+**The SLI requires `worker_up` AND lag < 60s, never lag alone.** A stopped
+subscriber reports lag 0 — a lag-only SLI reads healthiest at exactly the
+moment replication has died.
+
 ## Roadmap
 
 | # | Milestone | Cost | Status |
@@ -143,8 +179,8 @@ runbook resets sequences explicitly.
 | 1 | Repo skeleton · 2 clusters · Argo syncing both overlays | $0 | **done** |
 | 2 | Portability register resolved + enforced by a build guard | $0 | **done** |
 | 3 | CloudNativePG logical replication; **replication lag as an SLI** | $0 | **done** |
-| 4 | OTel + SLOs (Sloth), backend on Grafana Cloud free tier | $0 | next |
-| 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 | |
+| 4 | OTel + SLOs (Sloth); Prometheus evaluator on the passive side | $0 | **done** |
+| 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 | next |
 | 6 | Kyverno, audit→warn→enforce; DORA control mapping + evidence | $0 | |
 | 7 | Terraform for real AWS+GCP — **budget kill-switch first** | $0 | |
 | 8 | Burst #1: real EKS + GKE + HA VPN + real failover, then destroy | ~$30 | |
