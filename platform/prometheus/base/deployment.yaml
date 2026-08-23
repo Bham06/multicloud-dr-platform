@@ -32,7 +32,13 @@ spec:
             # archive. Long-term storage is Grafana Cloud's job, which also
             # keeps history outside both clouds where a failover can still
             # reach it.
-            - --storage.tsdb.retention.time=2h
+            #
+            # CAVEAT: the SLO period is 30d but retention is 24h, so
+            # `slo:period_error_budget_remaining` is not meaningful in this
+            # lab — it averages over a window that is mostly empty. Burn rate
+            # and the short-window error ratios are the signals to trust here.
+            # Grafana Cloud holds the history that makes the budget real.
+            - --storage.tsdb.retention.time=24h
             # The two collectors push rather than being scraped, so the
             # primary's metrics traverse the interconnect exactly once.
             - --web.enable-remote-write-receiver
