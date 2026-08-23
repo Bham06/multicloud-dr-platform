@@ -35,9 +35,9 @@ slos:
           1 - (
             avg_over_time(
               (
-                (max without(pod, instance, job) (cnpg_dr_subscription_worker_up) == bool 1)
+                (max(cnpg_dr_subscription_worker_up) == bool 1)
                 *
-                (max without(pod, instance, job) (cnpg_dr_subscription_lag_seconds) < bool 60)
+                (max(cnpg_dr_subscription_lag_seconds) < bool 60)
               )[{{.window}}:30s]
             )
             or on() vector(0)
@@ -78,19 +78,20 @@ slos:
     # class that matched and 0 for the rest. rate() over it is meaningless,
     # so this is a raw time-average SLI rather than an events ratio.
     #
-    # http_status_code is stripped deliberately: that label is only attached
-    # to the class that matched, so the 2xx series would change its label set
-    # between healthy and failing states and Prometheus would treat them as
-    # two unrelated series. avg_over_time across a series that stops existing
-    # returns nothing, which reads as a healthy SLO forever.
+    # max() with no grouping collapses to a single unlabelled series. Two
+    # reasons: http_status_code is attached only to the class that matched, so
+    # the 2xx series would otherwise change its label set between healthy and
+    # failing states and Prometheus would treat them as unrelated; and the
+    # metric arrives carrying every OTel resource label (k8s_pod_uid,
+    # service_instance_id, ...), which would fragment the SLO into a new
+    # series on every pod restart and lose its history.
     sli:
       raw:
         error_ratio_query: |
           1 - (
             avg_over_time(
               (
-                max without(http_status_code, otel_scope_name, otel_scope_version)
-                  (httpcheck_status{dr_role="primary", http_status_class="2xx"})
+                max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
               )[{{.window}}:30s]
             )
             or on() vector(0)

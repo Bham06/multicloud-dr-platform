@@ -8,9 +8,12 @@ resources:
 
 # Rules are generated from slo/dr.yaml by `make slo` and committed, so the
 # rules a reviewer reads in a PR are the rules that actually run.
+# Hash-suffixed deliberately. Prometheus reads rule files at startup and does
+# not watch them, so a stable ConfigMap name means edited rules are mounted but
+# never loaded — the old rules keep evaluating and the SLO silently reports on
+# a query you already replaced. The hash renames the ConfigMap, which rolls the
+# pod, which loads the rules.
 configMapGenerator:
   - name: prometheus-rules
     files:
       - rules/dr.rules.yaml
-generatorOptions:
-  disableNameSuffixHash: true
