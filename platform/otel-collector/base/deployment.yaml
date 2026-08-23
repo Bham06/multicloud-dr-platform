@@ -11,10 +11,6 @@ spec:
     metadata:
       labels:
         app: otel-collector
-      annotations:
-        # Roll the pod when the collector config changes; a ConfigMap edit
-        # alone would leave the old config running.
-        checksum/config: PLACEHOLDER
     spec:
       serviceAccountName: otel-collector
       containers:

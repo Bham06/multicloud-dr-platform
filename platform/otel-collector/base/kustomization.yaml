@@ -3,5 +3,13 @@ kind: Kustomization
 namespace: otel-collector
 resources:
   - rbac.yaml
-  - config.yaml
   - deployment.yaml
+
+# Generated rather than a static ConfigMap so the name carries a content hash.
+# A config edit therefore renames the ConfigMap, kustomize rewrites the volume
+# reference, and the pod rolls. A static ConfigMap would silently leave the old
+# config running — the pod only reads it at startup.
+configMapGenerator:
+  - name: otel-collector-config
+    files:
+      - collector.yaml
