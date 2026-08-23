@@ -263,11 +263,16 @@ groups:
 - name: sloth-slo-sli-recordings-dr-demo-api-availability
   rules:
   - record: slo:sli_error:ratio_rate5m
-    expr: |
-      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[5m]))
+    expr: |-
+      (1 - (
+        avg_over_time(
+          (
+            max without(http_status_code, otel_scope_name, otel_scope_version)
+              (httpcheck_status{dr_role="primary", http_status_class="2xx"})
+          )[5m:30s]
+        )
+        or on() vector(0)
       )
-      /
-      (sum(rate(httpcheck_status{dr_role="primary"}[5m]))
       )
     labels:
       owner: platform
@@ -276,11 +281,16 @@ groups:
       sloth_slo: demo-api-availability
       sloth_window: 5m
   - record: slo:sli_error:ratio_rate30m
-    expr: |
-      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[30m]))
+    expr: |-
+      (1 - (
+        avg_over_time(
+          (
+            max without(http_status_code, otel_scope_name, otel_scope_version)
+              (httpcheck_status{dr_role="primary", http_status_class="2xx"})
+          )[30m:30s]
+        )
+        or on() vector(0)
       )
-      /
-      (sum(rate(httpcheck_status{dr_role="primary"}[30m]))
       )
     labels:
       owner: platform
@@ -289,11 +299,16 @@ groups:
       sloth_slo: demo-api-availability
       sloth_window: 30m
   - record: slo:sli_error:ratio_rate1h
-    expr: |
-      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[1h]))
+    expr: |-
+      (1 - (
+        avg_over_time(
+          (
+            max without(http_status_code, otel_scope_name, otel_scope_version)
+              (httpcheck_status{dr_role="primary", http_status_class="2xx"})
+          )[1h:30s]
+        )
+        or on() vector(0)
       )
-      /
-      (sum(rate(httpcheck_status{dr_role="primary"}[1h]))
       )
     labels:
       owner: platform
@@ -302,11 +317,16 @@ groups:
       sloth_slo: demo-api-availability
       sloth_window: 1h
   - record: slo:sli_error:ratio_rate2h
-    expr: |
-      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[2h]))
+    expr: |-
+      (1 - (
+        avg_over_time(
+          (
+            max without(http_status_code, otel_scope_name, otel_scope_version)
+              (httpcheck_status{dr_role="primary", http_status_class="2xx"})
+          )[2h:30s]
+        )
+        or on() vector(0)
       )
-      /
-      (sum(rate(httpcheck_status{dr_role="primary"}[2h]))
       )
     labels:
       owner: platform
@@ -315,11 +335,16 @@ groups:
       sloth_slo: demo-api-availability
       sloth_window: 2h
   - record: slo:sli_error:ratio_rate6h
-    expr: |
-      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[6h]))
+    expr: |-
+      (1 - (
+        avg_over_time(
+          (
+            max without(http_status_code, otel_scope_name, otel_scope_version)
+              (httpcheck_status{dr_role="primary", http_status_class="2xx"})
+          )[6h:30s]
+        )
+        or on() vector(0)
       )
-      /
-      (sum(rate(httpcheck_status{dr_role="primary"}[6h]))
       )
     labels:
       owner: platform
@@ -328,11 +353,16 @@ groups:
       sloth_slo: demo-api-availability
       sloth_window: 6h
   - record: slo:sli_error:ratio_rate1d
-    expr: |
-      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[1d]))
+    expr: |-
+      (1 - (
+        avg_over_time(
+          (
+            max without(http_status_code, otel_scope_name, otel_scope_version)
+              (httpcheck_status{dr_role="primary", http_status_class="2xx"})
+          )[1d:30s]
+        )
+        or on() vector(0)
       )
-      /
-      (sum(rate(httpcheck_status{dr_role="primary"}[1d]))
       )
     labels:
       owner: platform
@@ -341,11 +371,16 @@ groups:
       sloth_slo: demo-api-availability
       sloth_window: 1d
   - record: slo:sli_error:ratio_rate3d
-    expr: |
-      (sum(rate(httpcheck_status{dr_role="primary", status_code!~"2.."}[3d]))
+    expr: |-
+      (1 - (
+        avg_over_time(
+          (
+            max without(http_status_code, otel_scope_name, otel_scope_version)
+              (httpcheck_status{dr_role="primary", http_status_class="2xx"})
+          )[3d:30s]
+        )
+        or on() vector(0)
       )
-      /
-      (sum(rate(httpcheck_status{dr_role="primary"}[3d]))
       )
     labels:
       owner: platform
