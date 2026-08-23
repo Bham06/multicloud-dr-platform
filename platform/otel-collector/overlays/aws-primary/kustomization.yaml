@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: otel-collector
+resources:
+  - ../../base
+configMapGenerator:
+  - name: otel-cluster-facts
+    behavior: create
+    literals:
+      - cluster=aws-primary
+      - remoteWriteEndpoint=http://172.30.0.20:30909/api/v1/write
+generatorOptions:
+  disableNameSuffixHash: true

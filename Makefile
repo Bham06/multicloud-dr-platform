@@ -34,6 +34,16 @@ status:
 	@kubectl --context $(CTX_SECONDARY) -n demo-api get deploy,pod 2>/dev/null || true
 	@echo
 
+## slo: regenerate Prometheus rules from slo/dr.yaml
+slo:
+	@docker run --rm -i ghcr.io/slok/sloth:latest generate -i /dev/stdin \
+		< slo/dr.yaml > platform/prometheus/base/rules/dr.rules.yaml
+	@echo "regenerated platform/prometheus/base/rules/dr.rules.yaml"
+
+## slo-status: SLO burn rate and error budget from Prometheus
+slo-status:
+	@./scripts/slo-status.sh
+
 ## db-status: replication health across both clusters
 db-status:
 	@./scripts/replication-status.sh
@@ -81,4 +91,4 @@ ui:
 mem:
 	@docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}'
 
-.PHONY: help up down status check db-status db-load db-sequences db-creds diff render password ui mem
+.PHONY: help up down status check slo slo-status db-status db-load db-sequences db-creds diff render password ui mem

@@ -117,13 +117,30 @@ printf '\n%s3. every component deploys to every cluster%s\n' "$YELLOW" "$OFF"
 # ---------------------------------------------------------------------------
 # A component present on the primary but missing from the standby silently will
 # not come back after failover. This is the check that catches it.
+#
+# A component may be deliberately single-sided, but it must SAY SO. Dropping a
+# SINGLE-CLUSTER file in the component directory documents the reason and makes
+# the exception reviewable in a PR. Silent asymmetry still fails — the point of
+# this check is to catch the overlay someone forgot, not to forbid asymmetry.
 for comp in "${COMPONENTS[@]}"; do
   missing=()
   for cluster in "${CLUSTERS[@]}"; do
     [[ -d "${comp}/overlays/${cluster}" ]] || missing+=("$cluster")
   done
+
+  if [[ -f "${comp}/SINGLE-CLUSTER" ]]; then
+    present=$(( ${#CLUSTERS[@]} - ${#missing[@]} ))
+    if (( present == 0 )); then
+      fail "${comp}: declared single-cluster but has no overlay at all"
+    else
+      pass "${comp}: single-cluster by declaration — $(head -1 "${comp}/SINGLE-CLUSTER")"
+    fi
+    continue
+  fi
+
   if (( ${#missing[@]} )); then
     fail "${comp}: no overlay for ${missing[*]} — would not survive failover"
+    printf '       %sadd a SINGLE-CLUSTER file if this is deliberate%s\n' "$DIM" "$OFF"
   else
     pass "${comp}: present on all ${#CLUSTERS[@]} clusters"
   fi

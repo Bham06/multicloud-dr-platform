@@ -1,0 +1,81 @@
+# SLO definitions, in Sloth's spec format.
+#
+# Committed as source. The generated Prometheus rules are committed alongside
+# them so both are reviewable in a PR — the README's claim that SLOs are code
+# only means something if the rules a reviewer sees are the rules that run.
+version: prometheus/v1
+service: dr
+labels:
+  owner: platform
+slos:
+  # ---------------------------------------------------------------------
+  # The DR SLO. Replication lag is the RPO exposure, so this is the SLI
+  # that says whether the standby is actually usable.
+  #
+  # Health is BOTH conditions: worker up AND lag inside RPO. Lag alone is
+  # the trap — a stopped subscriber reports lag 0 while falling
+  # arbitrarily far behind, so a lag-only SLI reads healthiest at exactly
+  # the moment replication has died.
+  # ---------------------------------------------------------------------
+  - name: replication-freshness
+    objective: 99.0
+    description: >-
+      The gcp-secondary standby is receiving changes from aws-primary and is
+      within the RPO target of minutes.
+    sli:
+      raw:
+        error_ratio_query: |
+          1 - (
+            avg_over_time(
+              (
+                (max without(pod, instance, job) (cnpg_dr_subscription_worker_up) == bool 1)
+                *
+                (max without(pod, instance, job) (cnpg_dr_subscription_lag_seconds) < bool 60)
+              )[{{.window}}:30s]
+            )
+            or on() vector(0)
+          )
+    alerting:
+      name: DRReplicationStale
+      labels:
+        pillar: dr
+      annotations:
+        runbook: docs/runbooks/failover.md
+        summary: >-
+          Replication from aws-primary to gcp-secondary is stale or stopped.
+          RPO is not being met; a failover now would lose data.
+      page_alert:
+        labels:
+          severity: page
+      ticket_alert:
+        labels:
+          severity: ticket
+
+  # ---------------------------------------------------------------------
+  # Availability of the active side, probed by the collector's httpcheck
+  # receiver. Scoped to aws-primary on purpose: gcp-secondary runs the
+  # pilot light at zero replicas, so its probe fails BY DESIGN and must
+  # not burn error budget.
+  # ---------------------------------------------------------------------
+  - name: demo-api-availability
+    objective: 99.5
+    description: >-
+      demo-api on the active cluster answers HTTP probes successfully.
+    sli:
+      events:
+        error_query: |
+          sum(rate(httpcheck_status{cluster="aws-primary", status_code!~"2.."}[{{.window}}]))
+        total_query: |
+          sum(rate(httpcheck_status{cluster="aws-primary"}[{{.window}}]))
+    alerting:
+      name: DemoAPIUnavailable
+      labels:
+        pillar: availability
+      annotations:
+        summary: demo-api on aws-primary is failing HTTP probes.
+      page_alert:
+        labels:
+          severity: page
+      ticket_alert:
+        labels:
+          severity: ticket
