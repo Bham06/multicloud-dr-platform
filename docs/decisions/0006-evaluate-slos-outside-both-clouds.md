@@ -83,3 +83,25 @@ workload's configuration.
   and the substrate — already at ~75% of a 3.83 GiB VM — stalled the prober for
   minutes at a time. The freshness term in the availability SLI is what surfaced
   it, which is the term working as designed.
+
+## Evidence
+
+Demonstrated by killing `gcp-secondary` — the cluster the evaluator used to live
+in, and the one failover lands on — with the evaluator running outside both:
+
+```
+12:12:49  gcp-secondary killed
+12:13:24  evaluator ready, 36 rules, still scraping the prober   probe=0  err5m=0.000
+12:13:49  err5m=0.100   DemoAPIUnavailable ticket firing
+12:15:55  err5m=0.500   DemoAPIUnavailable page firing
+12:17:11  err5m=0.700
+12:18:04  restored
+```
+
+The evaluator stayed ready and kept scraping throughout. Under the previous
+siting there would have been no evaluator to ask and no record of the event —
+which is the whole argument, since this is exactly the failure the SLO exists to
+measure.
+
+Compare the first game day, where a 127-second total outage produced a flat
+0.000 and no alert at all.
