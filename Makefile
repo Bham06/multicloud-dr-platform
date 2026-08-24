@@ -60,6 +60,18 @@ db-sequences:
 db-creds:
 	@./scripts/sync-db-credentials.sh
 
+## traffic: start the external traffic manager (runs outside both clusters)
+traffic:
+	@./scripts/traffic-manager.sh up
+
+## traffic-status: which cloud is actually serving, and is each side healthy
+traffic-status:
+	@./scripts/traffic-manager.sh status
+
+## traffic-switch: the cutover (make traffic-switch SITE=gcp-secondary)
+traffic-switch:
+	@./scripts/traffic-manager.sh switch $(or $(SITE),gcp-secondary)
+
 ## diff: prove the two overlays differ only where they should
 diff:
 	@diff --color=always -u \
@@ -91,4 +103,5 @@ ui:
 mem:
 	@docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}'
 
-.PHONY: help up down status check slo slo-status db-status db-load db-sequences db-creds diff render password ui mem
+.PHONY: help up down status check slo slo-status db-status db-load db-sequences db-creds \
+	traffic traffic-status traffic-switch diff render password ui mem

@@ -19,6 +19,7 @@ configMapGenerator:
       - CLOUD=gcp
       - REGION=europe-west2
       - DR_ROLE=standby
+      - WHOAMI_NAME=gcp-secondary
 
 labels:
   - pairs:

@@ -17,6 +17,10 @@ configMapGenerator:
       - CLOUD=aws
       - REGION=eu-west-1
       - DR_ROLE=primary
+      # whoami echoes this back on every response, so a request answered by
+      # this cluster says so itself. During a game day the traffic manager's
+      # opinion of where it sent you is not evidence; the reply is.
+      - WHOAMI_NAME=aws-primary
 
 labels:
   - pairs:
