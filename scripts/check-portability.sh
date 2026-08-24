@@ -211,7 +211,22 @@ print(role, replicas)
     fail "${comp}: ${primaries} cluster(s) claim dr.role=primary; exactly one may"
     bad=1
   fi
-  (( bad )) || pass "${comp}: role and replica count agree, one primary"
+
+  # The collector stamps dr_role onto every metric it exports, so if its role
+  # disagrees with the workload's the metrics are mislabelled even though the
+  # app is correct. promote.sh originally missed this file entirely.
+  while read -r cluster role replicas; do
+    [[ -n "$cluster" ]] || continue
+    col="platform/otel-collector/overlays/${cluster}/kustomization.yaml"
+    [[ -f "$col" ]] || continue
+    col_role="$(sed -n 's/^[[:space:]]*-[[:space:]]*drRole=//p' "$col" | head -1)"
+    if [[ -n "$col_role" && "$col_role" != "$role" ]]; then
+      fail "${comp}: ${cluster} runs as '${role}' but its collector labels metrics drRole=${col_role}"
+      bad=1
+    fi
+  done <<< "$facts"
+
+  (( bad )) || pass "${comp}: role, replica count and collector label agree"
 done
 
 # ---------------------------------------------------------------------------

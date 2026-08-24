@@ -68,7 +68,10 @@ and it is a stronger check than most production teams actually have.
 | `scripts/replication-status.sh` | Replication health across both clusters. Surfaces sequence divergence. |
 | `scripts/check-sequences.sh` | Pre-promotion gate: every sequence that would break writes, and the fix. |
 | `scripts/slo-status.sh` | SLO burn rate, error budget, firing alerts. |
-| `slo/dr.yaml` | SLO definitions. `make slo` regenerates the Prometheus rules. |
+| `slo/dr.yaml` | SLO definitions. `make slo` regenerates `slo/rules/` and reloads the evaluator. |
+| `scripts/evaluator.sh` | The SLO evaluator, running outside both clusters. |
+| `scripts/traffic-manager.sh` | The external traffic manager and outside-in prober. |
+| `scripts/promote.sh` | Role + replica swap for a failover, as one edit. |
 
 ## Quickstart
 
@@ -141,8 +144,11 @@ runbook resets sequences explicitly.
 
 ## What milestone 4 demonstrates
 
-OTel collectors on both clusters push to a single Prometheus on the passive
-side, which evaluates Sloth-generated multi-window burn-rate rules.
+OTel collectors on both clusters push to a single evaluator running **outside
+both clusters** (ADR 0006), which evaluates Sloth-generated multi-window
+burn-rate rules. It started on the passive side; the first game day showed that
+losing the cluster hosting it loses the SLO during precisely the failover the
+SLO measures.
 
 Verified by breaking replication on purpose:
 
@@ -162,7 +168,7 @@ Verified by breaking replication on purpose:
 Re-enabling the subscription caught up from retained WAL and the alert
 cleared.
 
-The SLO evaluator writes to a PVC, so a Prometheus restart mid-drill does not
+The evaluator writes to a persistent volume, so a restart mid-drill does not
 destroy the measured evidence the exercise exists to produce.
 
 Three details that matter more than the alert firing:
@@ -188,7 +194,7 @@ gate that is always red is a gate everyone learns to ignore.
 | 1 | Repo skeleton · 2 clusters · Argo syncing both overlays | $0 | **done** |
 | 2 | Portability register resolved + enforced by a build guard | $0 | **done** |
 | 3 | CloudNativePG logical replication; **replication lag as an SLI** | $0 | **done** |
-| 4 | OTel + SLOs (Sloth); Prometheus evaluator on the passive side | $0 | **done** |
+| 4 | OTel + SLOs (Sloth); evaluator outside both clusters | $0 | **done** |
 | 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 | **done** — RTO 2m 07s, RPO 0 rows |
 | 6 | Kyverno, audit→warn→enforce; DORA control mapping + evidence | $0 | next |
 | 7 | Terraform for real AWS+GCP — **budget kill-switch first** | $0 | |

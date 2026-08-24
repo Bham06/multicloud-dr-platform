@@ -2,25 +2,23 @@
 #
 # SLO burn rate, error budget and firing alerts.
 #
-# Prometheus runs on the passive side (platform/prometheus/SINGLE-CLUSTER), so
-# this port-forwards into gcp-secondary rather than reading a local endpoint.
+# The evaluator runs OUTSIDE both clusters (ADR 0006), so this reads it directly
+# instead of port-forwarding into one of them. That is not just convenience: a
+# status command that needs a working cluster to tell you the cluster is broken
+# is no use during the failure it exists for.
 #
 #   ./scripts/slo-status.sh
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-RUNTIME="${RUNTIME:-k3d}"
-CTX="${RUNTIME}-gcp-secondary"
-PORT="${PORT:-19090}"
+PORT="${EVAL_PORT:-19090}"
 
-kubectl --context "$CTX" -n prometheus port-forward svc/prometheus-server "${PORT}:80" >/dev/null 2>&1 &
-PF=$!
-trap 'kill $PF 2>/dev/null || true' EXIT
-for _ in $(seq 1 25); do
-  curl -sf "localhost:${PORT}/-/ready" >/dev/null 2>&1 && break
-  sleep 1
-done
+if ! curl -sf --max-time 3 "localhost:${PORT}/-/ready" >/dev/null 2>&1; then
+  printf '\n  \033[0;31mThe SLO evaluator is not answering on localhost:%s.\033[0m\n' "$PORT" >&2
+  printf '  It runs outside both clusters: \033[1mmake evaluator\033[0m\n\n' >&2
+  exit 1
+fi
 
 PORT="$PORT" python3 <<'PY'
 import json, os, urllib.parse, urllib.request
@@ -49,7 +47,7 @@ def by_slo(expr):
             out[name] = v
     return out
 
-print(f"\n{BOLD}  SLOs{OFF}  {DIM}(evaluated on k3d-gcp-secondary){OFF}\n")
+print(f"\n{BOLD}  SLOs{OFF}  {DIM}(evaluated outside both clusters){OFF}\n")
 
 obj    = by_slo("slo:objective:ratio")
 err5m  = by_slo("slo:sli_error:ratio_rate5m")

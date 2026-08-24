@@ -38,9 +38,17 @@ import os, pathlib, re, sys
 site, apply = os.environ["SITE"], os.environ["APPLY"] == "1"
 BOLD, DIM, RED, GREEN, OFF = "\033[1m", "\033[2m", "\033[0;31m", "\033[0;32m", "\033[0m"
 
-overlays = sorted(pathlib.Path("apps").glob("*/overlays/*/kustomization.yaml"))
+# apps/ AND platform/. The first version of this script globbed only apps/, so
+# the Deployment labels flipped and the collector's drRole literal did not —
+# and the collector is what stamps dr_role onto every metric it exports. Half a
+# fix for finding 3, which is the kind of thing that reads as fixed until the
+# next drill.
+overlays = sorted(
+    list(pathlib.Path("apps").glob("*/overlays/*/kustomization.yaml"))
+    + list(pathlib.Path("platform").glob("*/overlays/*/kustomization.yaml"))
+)
 if not overlays:
-    sys.exit("no app overlays found")
+    sys.exit("no overlays found")
 
 def role_of(text):
     m = re.search(r"^\s*dr\.role:\s*(\S+)", text, re.M)
@@ -54,6 +62,8 @@ def count_of(text):
 # than a hardcoded 2 — the drill's replica count is not a constant of the app.
 serving = {}
 for f in overlays:
+    if f.parts[0] != "apps":
+        continue
     t = f.read_text()
     app = f.parts[1]
     if role_of(t) == "primary":
@@ -68,7 +78,11 @@ for f in overlays:
 
     text = re.sub(r"^(\s*dr\.role:\s*)\S+", lambda m: m.group(1) + want_role, text, flags=re.M)
     text = re.sub(r"^(\s*-\s*DR_ROLE=)\S+",  lambda m: m.group(1) + want_role, text, flags=re.M)
-    text = re.sub(r"^(\s*count:\s*)\d+",     lambda m: m.group(1) + str(want_count), text, flags=re.M)
+    text = re.sub(r"^(\s*-\s*drRole=)\S+",   lambda m: m.group(1) + want_role, text, flags=re.M)
+    # Only apps carry a replica count; platform placement is deliberate and is
+    # not something a promotion may rewrite.
+    if f.parts[0] == "apps":
+        text = re.sub(r"^(\s*count:\s*)\d+", lambda m: m.group(1) + str(want_count), text, flags=re.M)
 
     if text != old:
         changed.append((f, old, text))

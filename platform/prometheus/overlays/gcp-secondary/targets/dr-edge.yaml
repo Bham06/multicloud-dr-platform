@@ -1,9 +1,0 @@
-# Where the outside-in prober lives in THIS environment.
-#
-# Locally that is the nginx traffic manager on the interconnect, at a static
-# address because a static_config cannot chase a DHCP lease. In the burst
-# environment it is whatever fronts both clouds — the address changes, the job
-# name and the SLI that reads it do not.
-- targets: ["172.30.0.30:9101"]
-  labels:
-    probe_origin: external

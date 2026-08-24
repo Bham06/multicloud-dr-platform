@@ -35,10 +35,18 @@ status:
 	@echo
 
 ## slo: regenerate Prometheus rules from slo/dr.yaml
+# Rules live next to their source, not under platform/, because the evaluator
+# is no longer a cluster workload — see ADR 0006. meta.rules.yaml sits in the
+# same directory and is hand-written; this only ever rewrites dr.rules.yaml.
 slo:
 	@docker run --rm -i ghcr.io/slok/sloth:latest generate -i /dev/stdin \
-		< slo/dr.yaml > platform/prometheus/base/rules/dr.rules.yaml
-	@echo "regenerated platform/prometheus/base/rules/dr.rules.yaml"
+		< slo/dr.yaml > slo/rules/dr.rules.yaml
+	@echo "regenerated slo/rules/dr.rules.yaml"
+	@./scripts/evaluator.sh reload
+
+## evaluator: start the SLO evaluator, outside both clusters
+evaluator:
+	@./scripts/evaluator.sh up
 
 ## slo-status: SLO burn rate and error budget from Prometheus
 slo-status:
@@ -104,4 +112,4 @@ mem:
 	@docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}'
 
 .PHONY: help up down status check slo slo-status db-status db-load db-sequences db-creds \
-	traffic traffic-status traffic-switch diff render password ui mem
+	traffic traffic-status traffic-switch evaluator diff render password ui mem
