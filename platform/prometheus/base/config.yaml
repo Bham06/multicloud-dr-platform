@@ -17,3 +17,22 @@ data:
       - job_name: prometheus
         static_configs:
           - targets: ["localhost:9090"]
+
+      # The outside-in prober, which runs outside both clusters.
+      #
+      # SCRAPED, not remote-written, and that is the entire point. A collector
+      # that pushes gives you no liveness signal at all: when its cluster died
+      # during the first game day the metrics simply stopped arriving, and
+      # staleness served the last healthy value for five minutes while the
+      # service was hard down. A scrape target that stops answering gets
+      # up == 0 written immediately, which is what the availability SLI keys
+      # off. SINGLE-CLUSTER already said to alert on up == 0; nothing was
+      # producing an `up` to alert on.
+      #
+      # Targets come from the overlay: this address is a property of the
+      # environment, and the same rule that keeps cloud names out of app bases
+      # keeps substrate addresses out of this one.
+      - job_name: dr-edge
+        scrape_interval: 10s
+        file_sd_configs:
+          - files: ["/etc/prometheus/targets/*.yaml"]

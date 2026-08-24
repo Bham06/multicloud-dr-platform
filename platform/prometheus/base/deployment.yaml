@@ -88,6 +88,8 @@ spec:
               mountPath: /etc/prometheus
             - name: rules
               mountPath: /etc/prometheus/rules
+            - name: targets
+              mountPath: /etc/prometheus/targets
             - name: data
               mountPath: /prometheus
           resources:
@@ -109,6 +111,12 @@ spec:
         - name: rules
           configMap:
             name: prometheus-rules
+        # Not optional: a missing target list must stop the pod, not silently
+        # leave the availability SLO with nothing to measure. Absent monitoring
+        # that looks fine is the failure mode this whole milestone is about.
+        - name: targets
+          configMap:
+            name: prometheus-targets
         - name: data
           persistentVolumeClaim:
             claimName: prometheus-data

@@ -264,13 +264,12 @@ groups:
   rules:
   - record: slo:sli_error:ratio_rate5m
     expr: |-
-      (1 - (
-        avg_over_time(
-          (
-            max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
-          )[5m:30s]
-        )
-        or on() vector(0)
+      (1 - avg_over_time(
+        (
+            (max(dr_probe_success{target="public"}) or on() vector(0))
+          * (max(up{job="dr-edge"})                 or on() vector(0))
+          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+        )[5m:30s]
       )
       )
     labels:
@@ -281,13 +280,12 @@ groups:
       sloth_window: 5m
   - record: slo:sli_error:ratio_rate30m
     expr: |-
-      (1 - (
-        avg_over_time(
-          (
-            max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
-          )[30m:30s]
-        )
-        or on() vector(0)
+      (1 - avg_over_time(
+        (
+            (max(dr_probe_success{target="public"}) or on() vector(0))
+          * (max(up{job="dr-edge"})                 or on() vector(0))
+          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+        )[30m:30s]
       )
       )
     labels:
@@ -298,13 +296,12 @@ groups:
       sloth_window: 30m
   - record: slo:sli_error:ratio_rate1h
     expr: |-
-      (1 - (
-        avg_over_time(
-          (
-            max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
-          )[1h:30s]
-        )
-        or on() vector(0)
+      (1 - avg_over_time(
+        (
+            (max(dr_probe_success{target="public"}) or on() vector(0))
+          * (max(up{job="dr-edge"})                 or on() vector(0))
+          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+        )[1h:30s]
       )
       )
     labels:
@@ -315,13 +312,12 @@ groups:
       sloth_window: 1h
   - record: slo:sli_error:ratio_rate2h
     expr: |-
-      (1 - (
-        avg_over_time(
-          (
-            max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
-          )[2h:30s]
-        )
-        or on() vector(0)
+      (1 - avg_over_time(
+        (
+            (max(dr_probe_success{target="public"}) or on() vector(0))
+          * (max(up{job="dr-edge"})                 or on() vector(0))
+          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+        )[2h:30s]
       )
       )
     labels:
@@ -332,13 +328,12 @@ groups:
       sloth_window: 2h
   - record: slo:sli_error:ratio_rate6h
     expr: |-
-      (1 - (
-        avg_over_time(
-          (
-            max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
-          )[6h:30s]
-        )
-        or on() vector(0)
+      (1 - avg_over_time(
+        (
+            (max(dr_probe_success{target="public"}) or on() vector(0))
+          * (max(up{job="dr-edge"})                 or on() vector(0))
+          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+        )[6h:30s]
       )
       )
     labels:
@@ -349,13 +344,12 @@ groups:
       sloth_window: 6h
   - record: slo:sli_error:ratio_rate1d
     expr: |-
-      (1 - (
-        avg_over_time(
-          (
-            max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
-          )[1d:30s]
-        )
-        or on() vector(0)
+      (1 - avg_over_time(
+        (
+            (max(dr_probe_success{target="public"}) or on() vector(0))
+          * (max(up{job="dr-edge"})                 or on() vector(0))
+          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+        )[1d:30s]
       )
       )
     labels:
@@ -366,13 +360,12 @@ groups:
       sloth_window: 1d
   - record: slo:sli_error:ratio_rate3d
     expr: |-
-      (1 - (
-        avg_over_time(
-          (
-            max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
-          )[3d:30s]
-        )
-        or on() vector(0)
+      (1 - avg_over_time(
+        (
+            (max(dr_probe_success{target="public"}) or on() vector(0))
+          * (max(up{job="dr-edge"})                 or on() vector(0))
+          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+        )[3d:30s]
       )
       )
     labels:
@@ -474,7 +467,8 @@ groups:
       severity: page
       sloth_severity: page
     annotations:
-      summary: demo-api on the active cluster is failing HTTP probes.
+      summary: The public endpoint is failing probes from outside both clouds, or
+        the external prober itself has gone silent. Both are outages.
       title: (page) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
         burn rate is too fast.
   - alert: DemoAPIUnavailable
@@ -495,6 +489,7 @@ groups:
       severity: ticket
       sloth_severity: ticket
     annotations:
-      summary: demo-api on the active cluster is failing HTTP probes.
+      summary: The public endpoint is failing probes from outside both clouds, or
+        the external prober itself has gone silent. Both are outages.
       title: (ticket) {{$labels.sloth_service}} {{$labels.sloth_slo}} SLO error budget
         burn rate is too fast.

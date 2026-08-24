@@ -8,8 +8,10 @@
 #
 # NOTE: no cluster name appears anywhere in this file, including in prose —
 # Sloth bakes descriptions into rule annotations, so they end up in a base and
-# the portability guard rejects them. That constraint is doing real work here:
-# see the dr_role note on the availability SLO.
+# the portability guard rejects them. The availability SLO below shows why that
+# constraint earns its keep: being unable to name a cluster forced the question
+# of what these SLIs are really measured against, and the honest answer turned
+# out to be "from outside both of them".
 version: prometheus/v1
 service: dr
 labels:
@@ -59,49 +61,72 @@ slos:
           severity: ticket
 
   # ---------------------------------------------------------------------
-  # Availability of whichever side is currently ACTIVE, probed by the
-  # collector's httpcheck receiver.
+  # Availability, measured OUTSIDE both clouds.
   #
-  # Filtered on dr_role="primary" and never on a cluster name. The standby
-  # runs the pilot light at zero replicas, so its probe fails by design and
-  # must not burn error budget. But hardcoding the active cluster's name
-  # would mean this SLO keeps measuring the demoted side after a failover
-  # and stops measuring the one actually serving traffic — broken at
-  # precisely the moment it matters most. The role label flips in Git as
-  # part of the failover change, so the SLO follows the traffic.
+  # The first game day proved the previous version of this SLO could not see
+  # the outage it existed for: it reported a flat 0.00% error ratio through a
+  # 127-second total loss of the active side, and its alert never fired. Three
+  # compounding reasons, all structural rather than a bad threshold:
+  #
+  #   1. The prober lived inside the thing it probed. The httpcheck receiver
+  #      measuring the active side ran in that same cluster, so when the
+  #      cluster died the prober died with it. A probe sharing a failure domain
+  #      with its target is not a probe. This is the same mistake the README
+  #      calls out for the failover trigger, one layer down.
+  #   2. Its metrics arrived by remote-write, which carries no liveness signal.
+  #      A pushing collector that stops pushing is indistinguishable from one
+  #      with nothing to say, so staleness kept serving the last healthy value
+  #      for five minutes after the cluster stopped existing.
+  #   3. `or on() vector(0)` sat OUTSIDE avg_over_time, so it only fired when
+  #      the whole window was empty. avg_over_time skips missing points rather
+  #      than counting them, so partial absence just raised the average of
+  #      whatever was left.
+  #
+  # This version probes the public endpoint from the traffic manager, which is
+  # attached to neither cluster, and is SCRAPED so that a prober that stops
+  # answering produces up == 0 immediately.
+  #
+  # Every term is multiplied, and every term defaults to 0 INSIDE the subquery,
+  # so each 30s step independently resolves to "available" or "not available":
+  #
+  #   dr_probe_success  the endpoint answered
+  #   up                the prober itself is reachable and being scraped
+  #   timestamp fresh   the probe loop is still sweeping, rather than a stale
+  #                     file being served by a proxy that is still alive
+  #
+  # Any one of them failing, or missing entirely, counts the step as an outage.
+  # Every failure mode of the measurement chain lands on "not available", which
+  # is the only safe direction for an availability SLI: the previous one failed
+  # towards "healthy" and that is why it lied.
+  #
+  # There is no dr_role filter any more, and that is deliberate. The old query
+  # named the role of the cluster it wanted, then kept measuring the demoted
+  # side after a failover because nothing flipped the label. Probing the public
+  # endpoint sidesteps the question — whoever is serving is what gets measured,
+  # because that is what a user reaches.
   # ---------------------------------------------------------------------
   - name: demo-api-availability
     objective: 99.5
     description: >-
-      demo-api on the active cluster answers HTTP probes successfully.
-    # httpcheck_status is a GAUGE — one series per status class, 1 for the
-    # class that matched and 0 for the rest. rate() over it is meaningless,
-    # so this is a raw time-average SLI rather than an events ratio.
-    #
-    # max() with no grouping collapses to a single unlabelled series. Two
-    # reasons: http_status_code is attached only to the class that matched, so
-    # the 2xx series would otherwise change its label set between healthy and
-    # failing states and Prometheus would treat them as unrelated; and the
-    # metric arrives carrying every OTel resource label (k8s_pod_uid,
-    # service_instance_id, ...), which would fragment the SLO into a new
-    # series on every pod restart and lose its history.
+      The public endpoint answers, measured from outside both clouds.
     sli:
       raw:
         error_ratio_query: |
-          1 - (
-            avg_over_time(
-              (
-                max(httpcheck_status{dr_role="primary", http_status_class="2xx"})
-              )[{{.window}}:30s]
-            )
-            or on() vector(0)
+          1 - avg_over_time(
+            (
+                (max(dr_probe_success{target="public"}) or on() vector(0))
+              * (max(up{job="dr-edge"})                 or on() vector(0))
+              * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+            )[{{.window}}:30s]
           )
     alerting:
       name: DemoAPIUnavailable
       labels:
         pillar: availability
       annotations:
-        summary: demo-api on the active cluster is failing HTTP probes.
+        summary: >-
+          The public endpoint is failing probes from outside both clouds, or the
+          external prober itself has gone silent. Both are outages.
       page_alert:
         labels:
           severity: page
