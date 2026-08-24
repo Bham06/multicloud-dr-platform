@@ -11,7 +11,7 @@ resources:
 # This is the whole active-passive posture expressed as one integer.
 replicas:
   - name: demo-api
-    count: 0
+    count: 2
 
 configMapGenerator:
   - name: site
