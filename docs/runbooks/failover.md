@@ -157,10 +157,10 @@ step is what follows.
 - [ ] `make traffic-status` shows the promoted side serving
 - [ ] The hostnames in the responses are real pods on the promoted cluster —
       check them against `kubectl get pods`
-- [ ] SLIs on the promoted side. **Read these with suspicion:** in the first
-      drill the availability SLO reported a flat 0.00% error rate straight
-      through a 127-second total outage. See finding 2 below before trusting a
-      green availability number during a failover.
+- [ ] `make slo-status`. The availability SLO is now measured from outside both
+      clouds (ADR 0005) and will have registered the outage. A cold Prometheus
+      reports unavailable for its first five minutes — absence counts as an
+      outage by design — so give it that long before reading the number.
 
 ## 6. Stop the clock
 
@@ -180,7 +180,7 @@ its own runbook and its own drill.
 
 | Date | Type | RTO target | RTO actual | RPO actual | Notes |
 | --- | --- | --- | --- | --- | --- |
-| 2026-08-24 | Total loss of primary, local | < 1h | **2m 07s** | **0 rows** | First drill. Three defects found — all in the tooling, none in the failover itself. |
+| 2026-08-24 | Total loss of primary, local | < 1h | **2m 07s** | **0 rows** | First drill. Three defects found — all in the tooling, none in the failover itself. All three fixed same day. |
 
 ### 2026-08-24 — first game day
 
@@ -234,10 +234,10 @@ call to be made by hand against the standby. Fixed in `927fdba`, along with
 three defects that fix exposed: unknown rendered as equal, a sequence warning
 comparing the wrong pair of numbers, and `slot INACTIVE` asserted from silence.
 
-**2. The availability SLO did not notice a total outage.** It reported a flat
-0.00% error ratio for the entire 127s, and `DemoAPIUnavailable` never fired.
-Verified by `query_range` across the window: 0.000 at every step. Two causes,
-both structural:
+**2. The availability SLO did not notice a total outage.** *(fixed — ADR 0005)*
+It reported a flat 0.00% error ratio for the entire 127s, and
+`DemoAPIUnavailable` never fired. Verified by `query_range` across the window:
+0.000 at every step. Two causes, both structural:
 
 - *The probe shares a failure domain with what it probes.* The `httpcheck`
   receiver measuring the active side runs **inside** the active side. When that
@@ -253,16 +253,38 @@ both structural:
   existing.
 
 **3. The role label never flips, so the SLO follows the wrong cluster.**
-`slo/dr.yaml` filters availability on `dr_role="primary"` and its own comment
-says the label "flips in Git as part of the failover change, so the SLO follows
-the traffic." Nothing in this runbook flips it. After the drill,
+*(fixed)* `slo/dr.yaml` filtered availability on `dr_role="primary"` and its own
+comment said the label "flips in Git as part of the failover change, so the SLO
+follows the traffic." Nothing in this runbook flipped it. After the drill,
 `dr_role="primary"` still resolved to the demoted `aws-primary` and
 `gcp-secondary` — serving 100% of traffic — was still labelled `standby`. The
 design was right and the procedure never executed it.
 
-Findings 2 and 3 are open. The fix for 2 is not a query tweak: the probe has to
-move outside both clouds, and the traffic manager built for this drill already
-sits there and already health-checks both sides.
+### How 2 and 3 were closed
+
+**Finding 2 — ADR 0005.** The probe moved into the external traffic manager,
+which is attached to neither cluster, and Prometheus now *scrapes* it instead of
+receiving a push. That distinction is the fix: a scrape target that stops
+answering gets `up == 0` written immediately, while a collector that stops
+pushing produces nothing at all and lets staleness serve its last healthy value.
+The SLI multiplies endpoint health, prober liveness and probe freshness, each
+defaulting to zero inside the subquery, so every failure mode of the measurement
+chain resolves to "not available". Demonstrated across four states — healthy 1,
+endpoint dead 0, prober dead 0, restored 1 — and the 5-minute error ratio
+climbed 0.0 → 1.0 over a sustained outage, against the flat 0.000 the old SLI
+produced for the same event.
+
+**Finding 3 — `promote.sh` plus a guard.** Role and replica count are now one
+edit rather than two, and the old primary is demoted to zero replicas in the
+same commit, which is how that side gets fenced. `make check` fails if a cluster
+runs replicas while labelled standby, or if more than one claims primary — the
+guard was written against the live post-drill repo, where it caught the real
+mistake rather than a synthetic one.
+
+**Still open, and not closed by either fix:** the evaluator itself lives inside
+`gcp-secondary`. The prober now survives either cluster dying; Prometheus does
+not. Losing the cluster that hosts it still loses the SLO. That is the Grafana
+Cloud move already recorded in ADR 0002.
 
 **Post-drill state.** The environment was left promoted, not failed back:
 `gcp-secondary` serving with 2 replicas and a writable database, `aws-primary`
