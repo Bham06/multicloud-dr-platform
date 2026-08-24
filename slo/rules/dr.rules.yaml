@@ -266,9 +266,11 @@ groups:
     expr: |-
       (1 - avg_over_time(
         (
-            (max(dr_probe_success{target="public"}) or on() vector(0))
-          *  max(up{job="dr-edge"})
-          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+          (
+              (max(dr_probe_success{target="public"}) or on() vector(0))
+            *  max(up{job="dr-edge"})
+          )
+          and (max(time() - dr_probe_timestamp_seconds) < 120)
         )[5m:30s]
       )
       )
@@ -282,9 +284,11 @@ groups:
     expr: |-
       (1 - avg_over_time(
         (
-            (max(dr_probe_success{target="public"}) or on() vector(0))
-          *  max(up{job="dr-edge"})
-          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+          (
+              (max(dr_probe_success{target="public"}) or on() vector(0))
+            *  max(up{job="dr-edge"})
+          )
+          and (max(time() - dr_probe_timestamp_seconds) < 120)
         )[30m:30s]
       )
       )
@@ -298,9 +302,11 @@ groups:
     expr: |-
       (1 - avg_over_time(
         (
-            (max(dr_probe_success{target="public"}) or on() vector(0))
-          *  max(up{job="dr-edge"})
-          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+          (
+              (max(dr_probe_success{target="public"}) or on() vector(0))
+            *  max(up{job="dr-edge"})
+          )
+          and (max(time() - dr_probe_timestamp_seconds) < 120)
         )[1h:30s]
       )
       )
@@ -314,9 +320,11 @@ groups:
     expr: |-
       (1 - avg_over_time(
         (
-            (max(dr_probe_success{target="public"}) or on() vector(0))
-          *  max(up{job="dr-edge"})
-          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+          (
+              (max(dr_probe_success{target="public"}) or on() vector(0))
+            *  max(up{job="dr-edge"})
+          )
+          and (max(time() - dr_probe_timestamp_seconds) < 120)
         )[2h:30s]
       )
       )
@@ -330,9 +338,11 @@ groups:
     expr: |-
       (1 - avg_over_time(
         (
-            (max(dr_probe_success{target="public"}) or on() vector(0))
-          *  max(up{job="dr-edge"})
-          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+          (
+              (max(dr_probe_success{target="public"}) or on() vector(0))
+            *  max(up{job="dr-edge"})
+          )
+          and (max(time() - dr_probe_timestamp_seconds) < 120)
         )[6h:30s]
       )
       )
@@ -346,9 +356,11 @@ groups:
     expr: |-
       (1 - avg_over_time(
         (
-            (max(dr_probe_success{target="public"}) or on() vector(0))
-          *  max(up{job="dr-edge"})
-          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+          (
+              (max(dr_probe_success{target="public"}) or on() vector(0))
+            *  max(up{job="dr-edge"})
+          )
+          and (max(time() - dr_probe_timestamp_seconds) < 120)
         )[1d:30s]
       )
       )
@@ -362,9 +374,11 @@ groups:
     expr: |-
       (1 - avg_over_time(
         (
-            (max(dr_probe_success{target="public"}) or on() vector(0))
-          *  max(up{job="dr-edge"})
-          * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+          (
+              (max(dr_probe_success{target="public"}) or on() vector(0))
+            *  max(up{job="dr-edge"})
+          )
+          and (max(time() - dr_probe_timestamp_seconds) < 120)
         )[3d:30s]
       )
       )

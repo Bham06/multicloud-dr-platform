@@ -105,13 +105,18 @@ scrape_configs:
 EOF
 }
 
-install_files() { # install_files <target-container-state>
-  local tmp; tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' RETURN
+install_files() {
+  # No RETURN trap here: under `set -u` it fires once the local has gone out of
+  # scope and dies on an unbound $tmp, which printed an error over an otherwise
+  # successful reload. Explicit cleanup is shorter and does not lie.
+  local tmp rc=0
+  tmp="$(mktemp -d)"
   mkdir -p "$tmp/rules"
   write_config > "$tmp/prometheus.yml"
   cp slo/rules/*.yaml "$tmp/rules/"
-  docker cp "$tmp/." "${CONTAINER}:/etc/prometheus/" >/dev/null
+  docker cp "$tmp/." "${CONTAINER}:/etc/prometheus/" >/dev/null || rc=$?
+  rm -rf "$tmp"
+  return $rc
 }
 
 cmd_up() {

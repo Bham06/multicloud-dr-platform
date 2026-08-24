@@ -152,15 +152,20 @@ write_probe() {
 INTERVAL=\${DR_PROBE_INTERVAL:-5}
 OUT=/var/lib/dr/metrics
 
-probe() { wget -q -T 4 -O /dev/null "\$1" 2>/dev/null && echo 1 || echo 0; }
+probe() { timeout 6 wget -q -T 4 -O /dev/null "\$1" 2>/dev/null && echo 1 || echo 0; }
+# busybox wget's -T does not reliably bound a connect, and this loop must not be
+# able to wedge: a stuck sweep stops the timestamp advancing, which the SLI reads
+# as an outage. timeout(1) bounds the whole call, connect included.
 
 while :; do
+  started=\$(date +%s)
   # The public endpoint is the user's actual path in: through this proxy, to
   # whichever site it currently points at. That is the SLI.
   pub=\$(probe http://127.0.0.1:8080/)
   aws=\$(probe http://$(site_addr aws-primary):${EDGE_NODEPORT}/health)
   gcp=\$(probe http://$(site_addr gcp-secondary):${EDGE_NODEPORT}/health)
   active=\$(sed -n 's/^# active-site: //p' /etc/nginx/nginx.conf)
+  swept=\$(date +%s)
 
   {
     echo "# HELP dr_probe_success Outside-in probe: 1 if the target answered."
@@ -176,7 +181,10 @@ while :; do
     done
     echo "# HELP dr_probe_timestamp_seconds Unix time of the last completed sweep."
     echo "# TYPE dr_probe_timestamp_seconds gauge"
-    echo "dr_probe_timestamp_seconds \$(date +%s)"
+    echo "dr_probe_timestamp_seconds \$swept"
+    echo "# HELP dr_probe_sweep_seconds How long the last sweep took."
+    echo "# TYPE dr_probe_sweep_seconds gauge"
+    echo "dr_probe_sweep_seconds \$((swept - started))"
   } > \$OUT.tmp && mv \$OUT.tmp \$OUT
 
   sleep \$INTERVAL

@@ -86,11 +86,25 @@ slos:
   # attached to neither cluster, and is SCRAPED so that a prober that stops
   # answering produces up == 0 immediately.
   #
-  # Three terms, multiplied, each evaluated per 30s step inside the subquery:
+  # Three terms per 30s step inside the subquery. Two are multiplied into the
+  # verdict; the third GATES whether there is a verdict at all:
   #
   #   dr_probe_success  the endpoint answered            absent -> 0, an outage
   #   up                the prober is being scraped      absent -> SKIP the step
-  #   timestamp fresh   the probe loop is still sweeping absent -> 0, an outage
+  #   timestamp fresh   the sweep is recent              stale  -> SKIP the step
+  #
+  # The freshness gate is an `and`, not a multiplied bool, and that changed
+  # after it misfired. As a bool it scored a stalled prober as a service
+  # outage, and on this substrate the prober stalls: both observed episodes
+  # lined up exactly with Argo syncing and pods rolling on a 3.83 GiB VM that
+  # is already swapping. The service was fine each time. A starved measurement
+  # chain means we do not KNOW whether the service was up, and "do not know"
+  # must not be scored as either up or down — the same lesson as `up` absence,
+  # one layer in. Staleness now excludes the step and raises DRProbeStale.
+  #
+  # The threshold is 120s against a 5s sweep — deliberately loose, because it
+  # is guarding against a dead loop, not a slow one. `dr_probe_sweep_seconds`
+  # is exported so slowness is observable rather than inferred.
   #
   # `up` is deliberately the one term with NO vector(0) default, and that
   # asymmetry is the whole design:
@@ -126,9 +140,11 @@ slos:
         error_ratio_query: |
           1 - avg_over_time(
             (
-                (max(dr_probe_success{target="public"}) or on() vector(0))
-              *  max(up{job="dr-edge"})
-              * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
+              (
+                  (max(dr_probe_success{target="public"}) or on() vector(0))
+                *  max(up{job="dr-edge"})
+              )
+              and (max(time() - dr_probe_timestamp_seconds) < 120)
             )[{{.window}}:30s]
           )
     alerting:

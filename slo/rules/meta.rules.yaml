@@ -32,3 +32,27 @@ groups:
             gone from service discovery, so the SLI is not accumulating and a
             healthy-looking number means nothing.
           runbook: docs/runbooks/failover.md
+
+      - alert: DRProbeStale
+        # The prober's HTTP endpoint is nginx serving a file that a shell loop
+        # rewrites. If the loop stalls and nginx does not, the endpoint keeps
+        # answering with the last verdict it wrote — a stale 1 reads exactly
+        # like a healthy service. The SLI excludes those steps rather than
+        # believing them, which is correct but silent, so the staleness itself
+        # is alerted here.
+        #
+        # On this substrate it fires under host contention rather than because
+        # the loop died: both observed episodes coincided with Argo syncing and
+        # pods rolling on a VM that is already swapping. That is a lab
+        # limitation and worth seeing, not worth hiding.
+        expr: (time() - dr_probe_timestamp_seconds) > 120
+        for: 2m
+        labels:
+          severity: ticket
+          pillar: availability
+        annotations:
+          summary: >-
+            The outside-in prober has stopped sweeping. Availability is not
+            being scored while this holds — the SLI skips those steps rather
+            than trusting the last value the prober wrote.
+          runbook: docs/runbooks/failover.md
