@@ -79,6 +79,27 @@ workload's configuration.
   if the standby is gone there is no DR left to measure. Fixing it properly
   means scraping the collectors rather than having them push, which needs a
   scrape endpoint exposed per cluster. That is its own change.
+- **The local substrate is blind about a third of the time, and this is what
+  finally made that visible.** Because the evaluator now scrapes itself from
+  outside the clusters, `up{job="prometheus"}` is a direct record of whether the
+  measurement system was running at all. Over one 150-minute stretch it showed
+  **8 gaps longer than a minute, the longest 14 minutes, totalling 49 minutes —
+  32.8% of the window with no samples of anything.** Container CPU was under 1%
+  and nothing was OOM-killed; the Docker VM itself stalls, host-wide, under the
+  memory pressure ADR 0002 already documents.
+
+  Two consequences worth stating plainly. Local SLO numbers carry a large noise
+  floor and should not be quoted as measurements of the service — the gates in
+  the availability SLI correctly *exclude* unmeasurable periods rather than
+  scoring them, so the SLO stays honest, but "honest" here means "declines to
+  answer for a third of the time". And any design that depends on continuous
+  local observation — autonomous failure detection above all — is unsound on
+  this substrate before a single line of it is written.
+
+  This is an argument for the Grafana Cloud backend at burst time, not for
+  growing the VM: ADR 0002 rejected that, and a bigger allocation on an 8 GB
+  host converts a bounded in-VM stall into host-wide paging.
+
 - **Two evaluators must not run at once.** During the migration both were live
   and the substrate — already at ~75% of a 3.83 GiB VM — stalled the prober for
   minutes at a time. The freshness term in the availability SLI is what surfaced
