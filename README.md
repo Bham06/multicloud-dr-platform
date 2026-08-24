@@ -162,7 +162,10 @@ Verified by breaking replication on purpose:
 Re-enabling the subscription caught up from retained WAL and the alert
 cleared.
 
-Two details that matter more than the alert firing:
+The SLO evaluator writes to a PVC, so a Prometheus restart mid-drill does not
+destroy the measured evidence the exercise exists to produce.
+
+Three details that matter more than the alert firing:
 
 **`replication-status.sh` reported "In sync — 1002 rows on both sides" while
 replication was dead.** Nothing was writing, so the row counts agreed
@@ -171,6 +174,12 @@ perfectly. Row equality is not a health check.
 **The SLI requires `worker_up` AND lag < 60s, never lag alone.** A stopped
 subscriber reports lag 0 — a lag-only SLI reads healthiest at exactly the
 moment replication has died.
+
+**The error-budget column reads `n/a` until the data earns it.** The budget
+averages over the 30d SLO period; a short-retention evaluator has hours. The
+arithmetic is correct and the answer is meaningless, so `make slo-status`
+measures its own coverage and refuses to print a number it cannot support. A
+gate that is always red is a gate everyone learns to ignore.
 
 ## Roadmap
 

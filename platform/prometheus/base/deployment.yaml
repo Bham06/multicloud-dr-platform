@@ -26,6 +26,24 @@ spec:
   # cannot mount it while the old one still holds it and the rollout would
   # deadlock. Single-replica evaluator, so there is nothing to gain from
   # overlapping pods anyway.
+  #
+  # MIGRATION TRAP, if you ever flip this on a Deployment that already exists:
+  # the API server defaults spec.strategy.rollingUpdate when type is
+  # RollingUpdate, and server-side apply MERGES rather than replaces — so it
+  # keeps that block and rejects the result with
+  #
+  #   spec.strategy.rollingUpdate: Forbidden: may not be specified when
+  #   strategy `type` is 'Recreate'
+  #
+  # Argo retries forever and the Application sits OutOfSync with a stale
+  # error. One-time fix on the live object, after which Git converges:
+  #
+  #   kubectl -n prometheus patch deploy prometheus --type=json -p \
+  #     '[{"op":"remove","path":"/spec/strategy/rollingUpdate"},
+  #       {"op":"replace","path":"/spec/strategy/type","value":"Recreate"}]'
+  #
+  # A cluster built fresh from this repo never hits it — the Deployment is
+  # created as Recreate and the defaulted field never exists.
   strategy:
     type: Recreate
   selector:
