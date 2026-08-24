@@ -40,13 +40,23 @@ on the interconnect — and probes the public endpoint: the same path a user
 takes. Prometheus scrapes it over the interconnect at a static address supplied
 by the overlay.
 
-The SLI multiplies three terms, each defaulting to zero **inside** the subquery:
+The SLI multiplies three terms, evaluated per step **inside** the subquery:
 
-| term | answers |
-| --- | --- |
-| `dr_probe_success{target="public"}` | did the endpoint answer? |
-| `up{job="dr-edge"}` | is the prober reachable and being scraped? |
-| `time() - dr_probe_timestamp_seconds < 60` | is the probe loop still sweeping? |
+| term | answers | when absent |
+| --- | --- | --- |
+| `dr_probe_success{target="public"}` | did the endpoint answer? | 0 — an outage |
+| `up{job="dr-edge"}` | is the prober being scraped? | **skip the step** |
+| `time() - dr_probe_timestamp_seconds < 60` | is the probe loop still sweeping? | 0 — an outage |
+
+`up` is the one term with no zero-default, and that asymmetry is load-bearing:
+
+- `up == 0` — we were watching and the prober did not answer. **An outage.**
+- `up` absent — there was no target in service discovery, so nothing was
+  watching. **Not evidence of anything**, and excluded from the average.
+
+"Not measured" is therefore not scored as error budget. It is a real condition
+and gets its own alert, `DRAvailabilityUnmeasured`, in a hand-written rules file
+separate from the one `make slo` regenerates.
 
 ## Rationale
 
@@ -63,9 +73,16 @@ The SLI multiplies three terms, each defaulting to zero **inside** the subquery:
    is unavailable to any push-based source.
 
 3. **Every failure mode of the measurement chain must resolve to "not
-   available".** The old query failed towards *healthy*, which is why it lied.
-   Defaulting each term to zero inside the subquery means missing data is
-   counted as an outage rather than skipped.
+   available" — but "we were not measuring" is not a failure mode of the
+   service.** The old query failed towards *healthy*, which is why it lied.
+   The first attempt at this fix over-corrected and defaulted every term to
+   zero, including `up`: every burn-rate window then read the time before
+   deployment as downtime, `ratio_rate3d` sat at 0.9932 against a perfectly
+   healthy service, and the alert would have fired continuously for three days.
+   An alert that is always on is exactly as useless as one that is never on.
+   The distinction between *down* and *not measured* is the difference between
+   the two, and an SLI that cannot express it will lie in one direction or the
+   other.
 
 4. **Probing the public endpoint removes the role question entirely.** The old
    query filtered on `dr_role="primary"` and kept measuring the demoted cluster
@@ -74,10 +91,11 @@ The SLI multiplies three terms, each defaulting to zero **inside** the subquery:
 
 ## Consequences
 
-- **A cold Prometheus reports unavailable for five minutes.** The window
-  predates the data, and absence is counted as an outage by design. This is the
-  conservative direction and it is not a bug; it was observed converging
-  0.8 → 0.2 → 0.1 → 0 over the five minutes after a restart.
+- **A cold Prometheus reports nothing rather than reporting unavailable.**
+  Windows that predate the prober contribute no samples, so a freshly deployed
+  or restarted evaluator does not manufacture downtime. The cost is that a
+  genuinely silent SLO looks identical to a healthy one from the SLI alone,
+  which is what `DRAvailabilityUnmeasured` exists to catch.
 - **The evaluator still lives inside `gcp-secondary`.** The prober now survives
   either cluster dying; the thing reading it does not. Losing the cluster that
   hosts Prometheus still loses the SLO. Moving the backend outside both clouds
@@ -99,9 +117,13 @@ Demonstrated, not assumed — the previous SLI had only ever reported healthy:
 | --- | --- |
 | healthy | 1 |
 | endpoint pointed at a site with zero pods | 0 |
-| prober itself stopped | 0 |
+| prober scraped but not answering (`up == 0`) | 0 |
 | restored | 1 |
+| before the prober existed at all | absent — step skipped |
 
 Over a sustained outage the 5-minute error ratio climbed 0.0 → 1.0 in step with
 the window, against the flat 0.000 the previous SLI produced for the same class
-of event.
+of event. Correcting the `up` default dropped every long window from ~0.99 to
+0.1646 — and left them all equal, which is the tell that they now cover the same
+real measurement period rather than padding it with absence. The residue is the
+~390s of downtime deliberately caused during testing, which should be scored.
