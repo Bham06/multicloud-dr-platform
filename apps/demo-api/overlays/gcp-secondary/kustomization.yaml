@@ -18,11 +18,11 @@ configMapGenerator:
     literals:
       - CLOUD=gcp
       - REGION=europe-west2
-      - DR_ROLE=standby
+      - DR_ROLE=primary
       - WHOAMI_NAME=gcp-secondary
 
 labels:
   - pairs:
       cloud: gcp
-      dr.role: standby
+      dr.role: primary
     includeSelectors: false

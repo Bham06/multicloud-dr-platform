@@ -25,14 +25,29 @@ standby. Split brain is the failure mode that turns an outage into data loss.
 ## 2. Scale up the pilot light
 
 ```bash
-# Edit apps/demo-api/overlays/gcp-secondary/kustomization.yaml
-#   replicas: count: 0  ->  count: 2
+./scripts/promote.sh gcp-secondary            # review the diff
+./scripts/promote.sh gcp-secondary --apply
 git commit -am "failover: promote gcp-secondary" && git push
 ```
 
+**Do not hand-edit the replica count.** That is what the first drill did, and it
+is why finding 3 exists: the count went 0 → 2, nothing flipped `dr.role`, and
+afterwards the cluster serving every request was still labelled `standby` while
+the label `primary` pointed at the dead one. Role and replica count are one
+decision. `promote.sh` makes them one edit, and demotes the old primary to zero
+replicas in the same commit — which is also how the old side gets fenced.
+
+`make check` now fails if a cluster runs replicas while labelled standby, so a
+half-done promotion breaks CI instead of quietly breaking the SLOs.
+
 Argo CD on `gcp-secondary` reconciles within its poll interval. The workload is
 already defined and its images are already pulled — this is why a pilot light
-starts in seconds rather than minutes.
+starts in seconds rather than minutes. If it has not appeared after a minute,
+force it:
+
+```bash
+kubectl -n argocd annotate app demo-api argocd.argoproj.io/refresh=hard --overwrite
+```
 
 Verify:
 

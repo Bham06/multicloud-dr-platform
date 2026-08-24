@@ -164,6 +164,57 @@ done
 (( orphans )) || pass "all overlays map to a real cluster"
 
 # ---------------------------------------------------------------------------
+printf '\n%s6. the cluster labelled primary is the one running the workload%s\n' "$YELLOW" "$OFF"
+# ---------------------------------------------------------------------------
+# Added after the first game day. The failover commit flipped the standby's
+# replica count from 0 to 2 and nothing flipped dr.role, so afterwards the
+# cluster serving 100% of traffic was still labelled `standby` and the cluster
+# labelled `primary` was the dead one. slo/dr.yaml had been written on the
+# assumption that the role label follows the traffic — the design was right and
+# no step in the runbook executed it.
+#
+# Nothing detected this. It is invisible in a diff that looks like a one-line
+# replica change, and the SLO it broke went on reporting perfect health. So it
+# becomes a build failure: role and replica count must agree, and exactly one
+# cluster may claim primary.
+for comp in "${COMPONENTS[@]}"; do
+  [[ "$comp" == apps/* ]] || continue          # platform placement is deliberate
+  facts=""
+  for cluster in "${CLUSTERS[@]}"; do
+    o="${comp}/overlays/${cluster}"
+    [[ -d "$o" ]] || continue
+    facts+="${cluster} $(render "$o" 2>/dev/null | python3 -c '
+import sys, yaml
+role, replicas = "-", "-"
+for d in yaml.safe_load_all(sys.stdin):
+    if d and d.get("kind") == "Deployment":
+        role = (d["metadata"].get("labels") or {}).get("dr.role", "-")
+        replicas = d["spec"].get("replicas", "-")
+print(role, replicas)
+')"$'\n'
+  done
+
+  primaries=0 bad=0
+  while read -r cluster role replicas; do
+    [[ -n "$cluster" ]] || continue
+    [[ "$role" == primary ]] && primaries=$((primaries + 1))
+    if [[ "$role" == primary && "$replicas" == 0 ]]; then
+      fail "${comp}: ${cluster} is labelled primary but runs 0 replicas"
+      bad=1
+    elif [[ "$role" == standby && "$replicas" != 0 ]]; then
+      fail "${comp}: ${cluster} runs ${replicas} replicas while still labelled standby — a failover that flipped the replica count and not the role"
+      bad=1
+    fi
+  done <<< "$facts"
+
+  if (( primaries != 1 )); then
+    fail "${comp}: ${primaries} cluster(s) claim dr.role=primary; exactly one may"
+    bad=1
+  fi
+  (( bad )) || pass "${comp}: role and replica count agree, one primary"
+done
+
+# ---------------------------------------------------------------------------
 printf '\n%s5. every overlay renders%s\n' "$YELLOW" "$OFF"
 # ---------------------------------------------------------------------------
 for comp in "${COMPONENTS[@]}"; do
