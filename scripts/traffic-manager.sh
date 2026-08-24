@@ -270,23 +270,32 @@ def ok(r): return r["code"] == "200" and r["site"]
 def ts(r): return float(r["epoch"])
 def iso(e): return datetime.datetime.fromtimestamp(e, datetime.timezone.utc).isoformat(timespec="milliseconds")
 
-# Collapse the sample stream into runs of "who was serving", where a failed
-# sample is its own state. Runs are what a reader actually wants to see.
+# Collapse the sample stream into runs of "who was serving". Every failure is
+# one DOWN run regardless of status code: a dead upstream alternates 502 and
+# 504 sample by sample, and splitting on the code shatters a single two-minute
+# outage into sixty one-line rows that hide the number you came for. The codes
+# seen are kept and shown alongside the run.
 runs, cur = [], None
 for r in rows:
-    state = r["site"] if ok(r) else f'DOWN({r["code"]})'
+    state = r["site"] if ok(r) else "DOWN"
     if cur and cur["state"] == state:
         cur["end"], cur["n"] = ts(r), cur["n"] + 1
+        cur["codes"].add(r["code"])
     else:
-        cur = {"state": state, "start": ts(r), "end": ts(r), "n": 1}
+        cur = {"state": state, "start": ts(r), "end": ts(r), "n": 1, "codes": {r["code"]}}
         runs.append(cur)
 
 print(f"\n  probe: {len(rows)} samples over {ts(rows[-1])-ts(rows[0]):.1f}s"
       f"  ({iso(ts(rows[0]))} -> {iso(ts(rows[-1]))})\n")
 print(f"  {'state':<22} {'from':<26} {'secs':>8} {'samples':>8}")
 for r in runs:
-    span = r["end"] - r["start"]
-    print(f"  {r['state']:<22} {iso(r['start']):<26} {span:>8.1f} {r['n']:>8}")
+    # A run's span is measured to the first sample of the NEXT run, not to its
+    # own last sample: the outage did not end when we last observed it failing.
+    nxt = runs[runs.index(r) + 1]["start"] if r is not runs[-1] else r["end"]
+    label = r["state"]
+    if label == "DOWN":
+        label += " (" + "/".join(sorted(r["codes"])) + ")"
+    print(f"  {label:<22} {iso(r['start']):<26} {nxt - r['start']:>8.1f} {r['n']:>8}")
 
 succ = [r for r in rows if ok(r)]
 if succ:
