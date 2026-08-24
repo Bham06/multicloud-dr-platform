@@ -86,18 +86,30 @@ slos:
   # attached to neither cluster, and is SCRAPED so that a prober that stops
   # answering produces up == 0 immediately.
   #
-  # Every term is multiplied, and every term defaults to 0 INSIDE the subquery,
-  # so each 30s step independently resolves to "available" or "not available":
+  # Three terms, multiplied, each evaluated per 30s step inside the subquery:
   #
-  #   dr_probe_success  the endpoint answered
-  #   up                the prober itself is reachable and being scraped
-  #   timestamp fresh   the probe loop is still sweeping, rather than a stale
-  #                     file being served by a proxy that is still alive
+  #   dr_probe_success  the endpoint answered            absent -> 0, an outage
+  #   up                the prober is being scraped      absent -> SKIP the step
+  #   timestamp fresh   the probe loop is still sweeping absent -> 0, an outage
   #
-  # Any one of them failing, or missing entirely, counts the step as an outage.
-  # Every failure mode of the measurement chain lands on "not available", which
-  # is the only safe direction for an availability SLI: the previous one failed
-  # towards "healthy" and that is why it lied.
+  # `up` is deliberately the one term with NO vector(0) default, and that
+  # asymmetry is the whole design:
+  #
+  #   up == 0      we were watching and the prober did not answer -> OUTAGE
+  #   up absent    the target was not in service discovery at all, so we were
+  #                not watching -> the step is not evidence of anything and is
+  #                excluded from the average
+  #
+  # Getting this wrong is not theoretical; the first version of this fix
+  # defaulted `up` to 0 like the others. Every window then read the time before
+  # the prober was deployed as downtime — ratio_rate3d sat at 0.9932 with the
+  # service perfectly healthy — and the alert would have fired continuously for
+  # three days. That is the same uselessness as an alert that never fires, which
+  # is what finding 2 was about, reached from the opposite direction. An SLI
+  # must distinguish "down" from "not measured".
+  #
+  # "Not measured" is a real condition and still needs an alert; it gets its own,
+  # in rules/meta.rules.yaml, rather than being smuggled into availability.
   #
   # There is no dr_role filter any more, and that is deliberate. The old query
   # named the role of the cluster it wanted, then kept measuring the demoted
@@ -115,7 +127,7 @@ slos:
           1 - avg_over_time(
             (
                 (max(dr_probe_success{target="public"}) or on() vector(0))
-              * (max(up{job="dr-edge"})                 or on() vector(0))
+              *  max(up{job="dr-edge"})
               * ((max(time() - dr_probe_timestamp_seconds) < bool 60) or on() vector(0))
             )[{{.window}}:30s]
           )

@@ -17,3 +17,6 @@ configMapGenerator:
   - name: prometheus-rules
     files:
       - rules/dr.rules.yaml
+      # Hand-written and never touched by `make slo`. Watches the measurement
+      # chain rather than the service.
+      - rules/meta.rules.yaml
