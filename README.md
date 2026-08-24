@@ -189,8 +189,8 @@ gate that is always red is a gate everyone learns to ignore.
 | 2 | Portability register resolved + enforced by a build guard | $0 | **done** |
 | 3 | CloudNativePG logical replication; **replication lag as an SLI** | $0 | **done** |
 | 4 | OTel + SLOs (Sloth); Prometheus evaluator on the passive side | $0 | **done** |
-| 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 | next |
-| 6 | Kyverno, audit→warn→enforce; DORA control mapping + evidence | $0 | |
+| 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 | **done** — RTO 2m 07s, RPO 0 rows |
+| 6 | Kyverno, audit→warn→enforce; DORA control mapping + evidence | $0 | next |
 | 7 | Terraform for real AWS+GCP — **budget kill-switch first** | $0 | |
 | 8 | Burst #1: real EKS + GKE + HA VPN + real failover, then destroy | ~$30 | |
 | 9 | FinOps: FOCUS-normalize the real burst bills + OpenCost | ~$0 | |
@@ -200,8 +200,12 @@ reasons: the measured local budget (ADR 0002) does not fit a self-hosted LGTM
 stack, and replication lag is a more useful first SLI than a synthetic one — it
 means the metric exists before the framework meant to measure it.
 
-Milestone 5 is the one that matters: a working, measured DR drill before a
-single dollar is spent on real cloud.
+Milestone 5 was the one that mattered: a working, measured DR drill before a
+single dollar is spent on real cloud. It ran on 2026-08-24 — 2m 07s RTO against
+a 1-hour target, zero rows lost. The failover itself behaved; all three defects
+it found were in the tooling around it, and the worst of them is that the
+availability SLO reported perfect health throughout a total outage. The drill
+log in `docs/runbooks/failover.md` has the numbers and the evidence.
 
 ## Ground rules
 
