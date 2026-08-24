@@ -10,5 +10,10 @@ configMapGenerator:
       - cluster=gcp-secondary
       - drRole=primary
       - remoteWriteEndpoint=http://172.30.0.40:9090/api/v1/write
-generatorOptions:
-  disableNameSuffixHash: true
+# The hash suffix is deliberately LEFT ON. These literals are consumed as
+# configMapKeyRef env vars, which a pod reads once at startup, so a stable name
+# means an edit lands in the ConfigMap and never reaches the running collector.
+# That is the same trap the base documents for otel-collector-config, and it
+# bit twice here: the remote-write endpoint kept pointing at the old evaluator,
+# and the drRole flip that promote.sh performs never took effect at all — the
+# collector went on stamping every metric with the pre-failover role.

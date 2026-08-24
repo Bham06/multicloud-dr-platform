@@ -230,6 +230,32 @@ print(role, replicas)
 done
 
 # ---------------------------------------------------------------------------
+printf '\n%s7. no generated ConfigMap opts out of its content hash%s\n' "$YELLOW" "$OFF"
+# ---------------------------------------------------------------------------
+# A pod reads a ConfigMap once, at startup — as env vars or as a mounted file.
+# The content hash in a generated name is what turns an edit into a new name, a
+# rewritten reference, and therefore a rolled pod. Switch it off and the edit
+# lands in the cluster and never reaches the process: the ConfigMap is correct,
+# the running workload is stale, and nothing anywhere reports a problem.
+#
+# This has now cost real time twice. Once in milestone 4, where a stable-named
+# rules ConfigMap meant Prometheus mounted new SLO rules and went on evaluating
+# the old ones. Once here, where otel-cluster-facts kept a collector pointed at
+# an evaluator that had moved — and, worse, meant the drRole flip that
+# promote.sh performs during a failover never reached the collector at all, so
+# every metric carried the pre-failover role indefinitely.
+#
+# Deliberately blunt. If a ConfigMap ever genuinely needs a fixed name, this
+# check is the right place to argue the exception.
+hashless=0
+while IFS= read -r f; do
+  grep -q 'disableNameSuffixHash:[[:space:]]*true' "$f" || continue
+  fail "${f}: disableNameSuffixHash means edits never roll the pod that reads them"
+  hashless=1
+done < <(find apps platform -name kustomization.yaml -not -path '*/charts/*' 2>/dev/null | sort)
+(( hashless )) || pass "every generated ConfigMap keeps its content hash"
+
+# ---------------------------------------------------------------------------
 printf '\n%s5. every overlay renders%s\n' "$YELLOW" "$OFF"
 # ---------------------------------------------------------------------------
 for comp in "${COMPONENTS[@]}"; do
