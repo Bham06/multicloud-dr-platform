@@ -4,7 +4,6 @@ namespace: postgres
 
 resources:
   - ../../base
-  - interconnect-service.yaml
   - publication.yaml
 
 # The peer CIDR is environment-specific (the interconnect locally, the VPN

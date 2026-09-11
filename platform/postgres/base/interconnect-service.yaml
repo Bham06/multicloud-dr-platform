@@ -1,0 +1,28 @@
+# Exposes this cluster's primary instance across the interconnect so a
+# subscriber on the other side can reach it. Locally a NodePort on the node's
+# interconnect address; in the burst environment the equivalent endpoint
+# reachable over the HA VPN.
+#
+# Deployed to BOTH clusters deliberately. On the side that is currently
+# subscribing it listens and nobody connects, which costs nothing — and it is
+# the difference between failback being a runbook and being impossible. The
+# gcp-secondary overlay had the matching pg_hba rule and this Service was
+# missing, so the standby was authenticated for a role it could not physically
+# perform. Nothing detects that until the day you try to reverse direction.
+#
+# The selector targets cnpg.io/instanceRole=primary rather than a fixed pod,
+# so if CNPG promotes a different instance the Service follows it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pg-interconnect
+spec:
+  type: NodePort
+  selector:
+    cnpg.io/cluster: pg
+    cnpg.io/instanceRole: primary
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      nodePort: 30432

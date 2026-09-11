@@ -4,3 +4,10 @@ namespace: postgres
 resources:
   - cluster.yaml
   - metrics.yaml
+  # In the base, not an overlay, so BOTH clusters get it. It lived only in the
+  # aws-primary overlay, which meant the standby had pg_hba configured to accept
+  # a subscriber and nothing listening for one — failback was impossible and
+  # nothing said so. The repo's own rule covers this: a component present on the
+  # primary with no equivalent on the standby is one that quietly will not come
+  # back.
+  - interconnect-service.yaml
