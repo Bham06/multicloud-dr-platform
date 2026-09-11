@@ -4,7 +4,7 @@ namespace: postgres
 
 resources:
   - ../../base
-  - subscription.yaml
+  - publication.yaml
 
 # The peer CIDR is environment-specific (the interconnect locally, the VPN
 # peer range in the burst environment), so it belongs in the overlay rather

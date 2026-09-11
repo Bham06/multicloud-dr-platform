@@ -16,7 +16,7 @@ spec:
     name: pg
   dbname: app
   name: app_sub
-  externalClusterName: gcp-secondary-pg
+  externalClusterName: aws-primary-pg
   publicationName: app_pub
   parameters:
     # Explicit even though it is the CREATE SUBSCRIPTION default. This is the
