@@ -1,8 +1,9 @@
 # Runbook — failback from GCP to AWS
 
 **Target:** RTO < 1 hour · RPO 0 (failback is planned, so losing data is a bug)
-**Status:** written 2026-09-11 from the state the M5 drill left behind, before
-executing. Drill log at the bottom.
+**Status:** exercised 2026-09-11 — **RTO 51s, user-visible outage 25s, RPO 0.**
+Nine defects found, four of them in the runbook or tooling as written. Drill log
+at the bottom.
 
 > **Failback is not failover reversed.** Failover is an emergency with a
 > degraded starting point you did not choose. Failback is elective: you pick the
@@ -228,4 +229,95 @@ ever moves a sequence forward.
 
 | Date | Type | RTO target | RTO actual | RPO actual | Notes |
 | --- | --- | --- | --- | --- | --- |
-| _(first failback drill)_ | | < 1h | | 0 expected | |
+| 2026-09-11 | Planned failback GCP→AWS | < 1h | **51s** | **0** | First failback. Nine findings; the drill itself lost 167 rows on the first attempt and had to be restarted. |
+
+### 2026-09-11 — first failback drill
+
+**Timeline** (cutover clock; the preceding re-seed and verification are excluded
+because they are not downtime):
+
+| | | elapsed |
+| --- | --- | --- |
+| 19:36:02 | cutover begins — clock starts | 0 |
+| 19:36:20 | `promote.sh` committed and pushed | +18.2s |
+| 19:36:28 | last 200 from `gcp-secondary` | +26.0s |
+| 19:36:37 | 2/2 ready on `aws-primary` | +35.5s |
+| 19:36:53 | **first 200 from `aws-primary` — restored** | **+51.0s** |
+
+**RPO 0**, verified by checksum rather than counts: the hash over `id <= 2242`
+taken at the quiesce gate is byte-identical to the same range on the promoted
+side afterwards.
+
+Outage 25.0s against the failover's 127.7s — as expected, since a planned
+cutover skips the declare, the diagnosis and the RPO decision entirely.
+
+### Findings
+
+**1. The standby could not publish at all.** `pg-interconnect` existed only in
+the `aws-primary` overlay while `gcp-secondary` carried the matching `pg_hba`
+rule, so the standby was authenticated for a role it could not physically
+perform. Measured before the fix: `172.30.0.20:30432 NOT reachable`. Failback
+was impossible and nothing reported it, because nothing exercises the reverse
+direction until the day you need it. The Service now lives in the base so the
+symmetry is structural.
+
+**2. The `Subscription` CR reports the result of its last reconcile and never
+re-checks.** After the M5 drill dropped the subscription in SQL — as the
+failover runbook instructs — `pg_subscription` had zero rows for seventeen days
+while the CR said `applied: true`, `kubectl` said `APPLIED true`, and Argo said
+`Synced / Healthy`. The spec had not changed, so the controller considered
+itself finished. Forcing it to act means **deleting the CR**, not editing it.
+
+**3. Argo reports `Synced / Healthy` over a failed subscription.** When the CR
+was recreated and genuinely failed — `could not create replication slot
+"app_sub": already exists` — the Application stayed green. Argo does not
+consider CNPG `Subscription.status.applied` in its health assessment.
+
+**4. `db-status` had the replication direction hardcoded.** It read the slot
+from `aws-primary` and the subscription from `gcp-secondary`. After the
+reversal it therefore queried the slot on the subscriber and the subscription on
+the publisher, found neither, and reported **"slot INACTIVE / subscriber none"
+over a link that was streaming with 0.47s of lag.** A DR tool reporting healthy
+replication as dead is the wrong direction to fail in. It now asks the databases
+which way they are pointing. The same hardcoding was in the data-age readout and
+in the sequence warning, which was checking the publisher's sequence when the
+sequence at risk belongs to whichever side is about to be promoted.
+
+**5. `db-load.sh` had the target cluster hardcoded**, so a load run after the
+reversal would have written to the *subscriber*, diverging the table that had
+just been re-seeded from it and manufacturing the split brain the drill exists
+to avoid.
+
+**6. The quiesce was not a quiesce, and the drill lost 167 rows because of it.**
+`db-load.sh --stream` ends in `exec kubectl …`, which *replaces* the shell, so
+`pkill -f "db-load.sh"` matches nothing. The wrapper died, the server-side
+`psql \watch` loop kept inserting, and the run was declared quiesced anyway.
+The subscription was then dropped on the side being promoted while writes were
+still flowing: **167 rows across 63 seconds stranded on the old primary with no
+replication left to carry them.** Promoting there would have been a planned
+migration with a non-zero RPO, which this runbook defines as a defect. The drill
+was restarted from a fresh re-seed.
+
+The authoritative stop is server-side — `pg_terminate_backend` on the writing
+session — and the only acceptable evidence is the row count holding still across
+several consecutive reads.
+
+**7. A checksum against a moving source proves nothing.** The first gate did
+match, 2075 against 2075, and was worthless: the source was still accepting
+writes, so it compared a snapshot of a target that moved immediately afterwards.
+Quiesce first, *then* compare. Order is the whole content of the step.
+
+**8. `ALTER SUBSCRIPTION … SET (slot_name = NONE)` orphans the slot on the
+publisher.** The failover runbook uses that dance to drop a subscription whose
+publisher is gone, which is right there and leaves an orphan here: the next
+subscription of the same name fails with `replication slot "app_sub" already
+exists`. Drop it on the publisher as part of the same step.
+
+**9. `promote.sh`'s atomic swap costs avoidable downtime on a planned cutover.**
+It scales the target up and the source down in one commit, so the source reached
+zero replicas at 19:36:29 and the target was not ready until 19:36:37. For a
+*failover* that is correct — fencing the old primary immediately is the point.
+For a planned failback the order can be reversed: bring the target up, move
+traffic, then scale the source down, which reduces the outage to the proxy
+reload. Not changed, because the failover case matters more and one flag that
+alters fencing behaviour is a dangerous thing to add; recorded as a known cost.

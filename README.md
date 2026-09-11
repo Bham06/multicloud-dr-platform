@@ -196,6 +196,7 @@ gate that is always red is a gate everyone learns to ignore.
 | 3 | CloudNativePG logical replication; **replication lag as an SLI** | $0 | **done** |
 | 4 | OTel + SLOs (Sloth); evaluator outside both clusters | $0 | **done** |
 | 5 | **First failover game day, fully local.** Measure RTO/RPO. | $0 | **done** — RTO 2m 07s, RPO 0 rows |
+| 5b | **First failback drill.** Restores replication; RPO must be 0. | $0 | **done** — RTO 51s, RPO 0 |
 | 6 | Kyverno, audit→warn→enforce; DORA control mapping + evidence | $0 | next |
 | 7 | Terraform for real AWS+GCP — **budget kill-switch first** | $0 | |
 | 8 | Burst #1: real EKS + GKE + HA VPN + real failover, then destroy | ~$30 | |
@@ -205,6 +206,13 @@ Data replication comes before observability, reversing the original order. Two
 reasons: the measured local budget (ADR 0002) does not fit a self-hosted LGTM
 stack, and replication lag is a more useful first SLI than a synthetic one — it
 means the metric exists before the framework meant to measure it.
+
+Failback got its own drill rather than being assumed, and earned it: nine
+findings, including that the standby could not publish at all because the Service
+exposing it existed in only one overlay. The drill also lost 167 rows on its
+first attempt, from a quiesce that had been declared rather than verified, and
+had to be restarted. Both runbooks now carry measured numbers:
+`docs/runbooks/failover.md` and `docs/runbooks/failback.md`.
 
 Milestone 5 was the one that mattered: a working, measured DR drill before a
 single dollar is spent on real cloud. It ran on 2026-08-24 — 2m 07s RTO against
