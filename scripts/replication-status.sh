@@ -46,8 +46,36 @@ p_max=$(pq  "select coalesce(max(id),0) from orders")
 s_max=$(sq  "select coalesce(max(id),0) from orders")
 p_seq=$(pq  "select last_value from orders_id_seq")
 s_seq=$(sq  "select last_value from orders_id_seq")
-slot=$(pq   "select (case when active then 'yes' else 'no' end)||'|'||coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),0)::text from pg_replication_slots where slot_type='logical' limit 1")
-sub=$(sq    "select (case when st.pid is not null then 'yes' else 'no' end)||'|'||coalesce(round(extract(epoch from (now()-st.latest_end_time))::numeric,2),0)::text from pg_subscription s left join pg_stat_subscription st on st.subid=s.oid limit 1")
+# ---------------------------------------------------------------------------
+# Which way is replication actually pointing?
+#
+# This used to be hardcoded: slot read from aws-primary, subscription read from
+# gcp-secondary. That is true only until the first failback, after which the
+# script queried the slot on the subscriber and the subscription on the
+# publisher, found neither, and reported "slot INACTIVE / subscriber none" over
+# a link that was streaming with 0.47s of lag. A DR tool that reports healthy
+# replication as dead is the wrong direction to fail in, and it was found the
+# first time the reverse direction was exercised.
+#
+# The topology is a fact about the databases, so ask them.
+# ---------------------------------------------------------------------------
+p_haspub=$(pq "select count(*) from pg_publication")
+s_haspub=$(sq "select count(*) from pg_publication")
+p_hassub=$(pq "select count(*) from pg_subscription")
+s_hassub=$(sq "select count(*) from pg_subscription")
+
+PUB_CTX=""; SUB_CTX=""; PUB_NAME="?"; SUB_NAME="?"
+if [[ "${p_haspub:-0}" != "0" && "${s_hassub:-0}" != "0" ]]; then
+  PUB_CTX="$PRIMARY_CTX"; SUB_CTX="$STANDBY_CTX"; PUB_NAME="aws-primary"; SUB_NAME="gcp-secondary"
+elif [[ "${s_haspub:-0}" != "0" && "${p_hassub:-0}" != "0" ]]; then
+  PUB_CTX="$STANDBY_CTX"; SUB_CTX="$PRIMARY_CTX"; PUB_NAME="gcp-secondary"; SUB_NAME="aws-primary"
+fi
+
+pubq() { [[ -n "$PUB_CTX" ]] && q "$PUB_CTX" "$1"; }
+subq() { [[ -n "$SUB_CTX" ]] && q "$SUB_CTX" "$1"; }
+
+slot=$(pubq "select (case when active then 'yes' else 'no' end)||'|'||coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),0)::text from pg_replication_slots where slot_type='logical' limit 1")
+sub=$(subq  "select (case when st.pid is not null then 'yes' else 'no' end)||'|'||coalesce(round(extract(epoch from (now()-st.latest_end_time))::numeric,2),0)::text from pg_subscription s left join pg_stat_subscription st on st.subid=s.oid limit 1")
 
 # An empty result means the query failed, which must not read as "healthy".
 [[ -n "$slot" ]] || slot="unknown|?"
@@ -55,7 +83,14 @@ sub=$(sq    "select (case when st.pid is not null then 'yes' else 'no' end)||'|'
 slot_active="${slot%%|*}"; slot_lag="${slot##*|}"
 sub_up="${sub%%|*}";       sub_lag="${sub##*|}"
 
-printf '\n%s  replication%s   %saws-primary -> gcp-secondary%s\n\n' "$BOLD" "$OFF" "$DIM" "$OFF"
+printf '\n%s  replication%s   %s%s -> %s%s\n\n' "$BOLD" "$OFF" "$DIM" "$PUB_NAME" "$SUB_NAME" "$OFF"
+
+if [[ -z "$PUB_CTX" ]] && (( P_UP && S_UP )); then
+  printf '  %s%sNO REPLICATION TOPOLOGY%s — neither side is publishing to the other.\n' "$RED" "$BOLD" "$OFF"
+  printf '  %sExpected exactly one publication and one matching subscription, on\n' "$DIM"
+  printf '  opposite clusters. Mid-failover this is normal; at rest it means DR\n'
+  printf '  is not running at all.%s\n\n' "$OFF"
+fi
 
 if (( ! P_UP )) || (( ! S_UP )); then
   down=aws-primary; (( P_UP )) && down=gcp-secondary
@@ -79,10 +114,10 @@ echo
 # The freshness signal that does NOT depend on the primary existing. This is the
 # RPO decision during a real outage: how old is the newest row we actually hold,
 # and how long since the publisher last said anything.
-if (( S_UP )); then
-  age=$(sq "select coalesce(round(extract(epoch from (now()-max(created_at)))::numeric,1)::text,'-') from orders")
-  contact=$(sq "select coalesce(round(extract(epoch from (now()-st.latest_end_time))::numeric,1)::text,'-') from pg_subscription s left join pg_stat_subscription st on st.subid=s.oid limit 1")
-  printf '  %-22s %ss  %snewest row the standby holds%s\n' "standby data age" "$(fmt "$age")" "$DIM" "$OFF"
+if [[ -n "$SUB_CTX" ]]; then
+  age=$(subq "select coalesce(round(extract(epoch from (now()-max(created_at)))::numeric,1)::text,'-') from orders")
+  contact=$(subq "select coalesce(round(extract(epoch from (now()-st.latest_end_time))::numeric,1)::text,'-') from pg_subscription s left join pg_stat_subscription st on st.subid=s.oid limit 1")
+  printf '  %-22s %ss  %snewest row %s holds%s\n' "subscriber data age" "$(fmt "$age")" "$DIM" "$SUB_NAME" "$OFF"
   if [[ -z "$contact" || "$contact" == "-" ]]; then
     printf '  %-22s %snone%s  %sno subscription on this side — it is promoted, or never subscribed%s\n\n' \
       "last publisher contact" "$YEL" "$OFF" "$DIM" "$OFF"
@@ -96,16 +131,16 @@ fi
 # unknown — printing INACTIVE would be inventing a fact from silence, which is
 # the same mistake as printing "healthy" from silence, just pointed the other
 # way. A DR tool that fabricates either direction cannot be trusted mid-incident.
-if (( ! P_UP )); then
-  printf '  slot        %sunknown%s  — the primary did not answer; its slot state cannot be read\n' "$YEL" "$OFF"
+if [[ -z "$PUB_CTX" ]]; then
+  printf '  slot        %sunknown%s  — no publisher identified, so there is no slot to read\n' "$YEL" "$OFF"
 elif [[ "$slot_active" == "yes" ]]; then
   printf '  slot        %sactive%s   lag %s bytes\n' "$GREEN" "$OFF" "$slot_lag"
 else
   printf '  slot        %sINACTIVE%s  — publisher is retaining WAL for a subscriber that is not reading it\n' "$RED" "$OFF"
 fi
 
-if (( ! S_UP )); then
-  printf '  subscriber  %sunknown%s  — the standby did not answer\n' "$YEL" "$OFF"
+if [[ -z "$SUB_CTX" ]]; then
+  printf '  subscriber  %sunknown%s  — no subscriber identified\n' "$YEL" "$OFF"
 elif [[ "$sub_up" == "yes" ]]; then
   printf '  subscriber  %sup%s       lag %ss\n' "$GREEN" "$OFF" "$sub_lag"
 elif [[ "$sub_up" == "unknown" ]]; then
@@ -139,13 +174,19 @@ fi
 # self-contradictory false alarm immediately after one ("still at 1912 while its
 # table already holds ids up to 1912"). check-sequences.sh had it right; this
 # script had quietly reimplemented it wrong.
-if [[ -n "$s_seq" && -n "$s_max" ]] && (( s_seq < s_max )); then
+# The side at risk is whichever one is SUBSCRIBING, because that is the side a
+# promotion would make writable next. Reading gcp-secondary unconditionally was
+# the same hardcoded-direction bug as everything above: after a failback it
+# checks the publisher's sequence, which nothing is about to promote.
+sub_seq=$(subq "select last_value from orders_id_seq")
+sub_max=$(subq "select coalesce(max(id),0) from orders")
+if [[ -n "$sub_seq" && -n "$sub_max" ]] && (( sub_seq < sub_max )); then
   cat <<EOF
 
   ${RED}${BOLD}Sequence divergence — this breaks failover.${OFF}
-  Logical replication carries rows, not sequence values. The standby's
-  orders_id_seq is still at ${s_seq} while its table already holds ids up to
-  ${s_max}. Promote it as-is and the first INSERT tries id=$((s_seq + 1)),
+  Logical replication carries rows, not sequence values. ${SUB_NAME}'s
+  orders_id_seq is still at ${sub_seq} while its table already holds ids up to
+  ${sub_max}. Promote it as-is and the first INSERT tries id=$((sub_seq + 1)),
   colliding with a row that replication already delivered.
 
   The promotion step must run:
