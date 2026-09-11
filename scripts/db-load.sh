@@ -11,7 +11,27 @@ cd "$(dirname "$0")/.."
 
 RUNTIME="${RUNTIME:-k3d}"
 ROWS="${1:-500}"
-PRIMARY_CTX="${RUNTIME}-aws-primary"
+
+# Write to whichever cluster is actually the publisher, not to a hardcoded one.
+# This said aws-primary, which was true until the first failback reversed the
+# direction — after which a load run would have written to the SUBSCRIBER,
+# diverging the table that had just been re-seeded from it and manufacturing
+# the split brain the drill exists to avoid. The writable side is the one that
+# is not subscribing, and the databases know which that is.
+sub_on() { # sub_on <cluster>
+  kubectl --context "${RUNTIME}-$1" --request-timeout=15s -n postgres exec pg-1 -c postgres -- \
+    psql -U postgres -d app -tAc "select count(*) from pg_subscription" 2>/dev/null | tr -d '\r'
+}
+PRIMARY_CTX=""
+for c in aws-primary gcp-secondary; do
+  n="$(sub_on "$c")"
+  [[ "$n" == "0" ]] && PRIMARY_CTX="${RUNTIME}-${c}"
+done
+if [[ -z "$PRIMARY_CTX" ]]; then
+  echo "Refusing to write: could not identify a cluster that is not subscribing." >&2
+  echo "Both sides subscribing, or neither reachable. Check 'make db-status'." >&2
+  exit 1
+fi
 
 # --stream exists for the game day. A bulk INSERT gives every row the same
 # created_at and finishes long before anything fails, so at the moment the

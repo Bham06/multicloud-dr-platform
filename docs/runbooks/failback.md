@@ -160,6 +160,30 @@ Then prove it moves rows rather than assuming it:
 - [ ] Row count on the subscriber rises while the stream runs
 - [ ] Lag inside target
 
+## 4b. Quiesce and drain — this is what buys RPO 0
+
+Failover cannot do this: in a disaster the primary is already gone and whatever
+had not replicated is simply lost. Failback is elective, so the writes can be
+stopped deliberately and replication allowed to catch up before anything is
+promoted. **This step is the entire reason RPO 0 is achievable here**, and it was
+missing from the first draft of this runbook.
+
+```bash
+# 1. stop writes at the source — in a real system, drain the app, not the loader
+# 2. wait for the subscriber to catch up
+make db-status      # watch 'last publisher contact' and the subscriber lag fall
+```
+
+- [ ] Writes stopped at the current primary
+- [ ] Subscriber lag reached ~0 **after** the last write
+- [ ] `max(id)` and row counts identical on both sides
+- [ ] Only then proceed
+
+Promoting before the drain completes converts a planned migration into an
+unplanned data-loss event, and it will not be obvious afterwards: the counts
+settle, both sides look consistent, and the rows that never arrived are simply
+absent with nothing pointing at them.
+
 ## 5. Cut back
 
 Only once replication is proven, and in this order:
