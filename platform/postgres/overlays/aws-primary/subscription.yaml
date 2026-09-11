@@ -16,5 +16,13 @@ spec:
     name: pg
   dbname: app
   name: app_sub
-  externalClusterName: aws-primary-pg
+  externalClusterName: gcp-secondary-pg
   publicationName: app_pub
+  parameters:
+    # Explicit even though it is the CREATE SUBSCRIPTION default. This is the
+    # re-seed: the subscriber's copy of the table is discarded and refilled from
+    # the publisher. Safe here only because the divergence was checked first and
+    # the old primary proved to be a byte-identical prefix — see step 1 of
+    # docs/runbooks/failback.md. The table must be empty before this runs, or
+    # the initial COPY collides on the primary key.
+    copy_data: "true"

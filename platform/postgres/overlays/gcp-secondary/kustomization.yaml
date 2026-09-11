@@ -4,7 +4,7 @@ namespace: postgres
 
 resources:
   - ../../base
-  - subscription.yaml
+  - publication.yaml
 
 patches:
   # Where the publisher lives. Environment-specific by nature: the interconnect

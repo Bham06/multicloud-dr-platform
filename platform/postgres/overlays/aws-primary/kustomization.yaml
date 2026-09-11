@@ -4,12 +4,33 @@ namespace: postgres
 
 resources:
   - ../../base
-  - publication.yaml
+  - subscription.yaml
 
 # The peer CIDR is environment-specific (the interconnect locally, the VPN
 # peer range in the burst environment), so it belongs in the overlay rather
 # than the base.
 patches:
+  # Where the peer lives. Defined on BOTH clusters, each naming the other, so
+  # reversing replication is only a question of which CR exists where rather
+  # than an edit to connection details under time pressure. Same reasoning as
+  # the pg_hba rule and the pg-interconnect Service being symmetric.
+  - target:
+      kind: Cluster
+      name: pg
+    patch: |-
+      - op: add
+        path: /spec/externalClusters
+        value:
+          - name: gcp-secondary-pg
+            connectionParameters:
+              host: "172.30.0.20"
+              port: "30432"
+              user: app
+              dbname: app
+              sslmode: require
+            password:
+              name: pg-app-credentials
+              key: password
   - target:
       kind: Cluster
       name: pg
