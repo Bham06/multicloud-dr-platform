@@ -11,18 +11,18 @@ resources:
 # This is the whole active-passive posture expressed as one integer.
 replicas:
   - name: demo-api
-    count: 2
+    count: 0
 
 configMapGenerator:
   - name: site
     literals:
       - CLOUD=gcp
       - REGION=europe-west2
-      - DR_ROLE=primary
+      - DR_ROLE=standby
       - WHOAMI_NAME=gcp-secondary
 
 labels:
   - pairs:
       cloud: gcp
-      dr.role: primary
+      dr.role: standby
     includeSelectors: false

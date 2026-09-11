@@ -8,7 +8,7 @@ configMapGenerator:
     behavior: create
     literals:
       - cluster=aws-primary
-      - drRole=standby
+      - drRole=primary
       # The evaluator lives outside both clusters (ADR 0006), so both sides
       # push to the same address over the interconnect. The standby used to
       # get an in-cluster shortcut; now neither side has one, which means the

@@ -8,7 +8,7 @@ configMapGenerator:
     behavior: create
     literals:
       - cluster=gcp-secondary
-      - drRole=primary
+      - drRole=standby
       - remoteWriteEndpoint=http://172.30.0.40:9090/api/v1/write
 # The hash suffix is deliberately LEFT ON. These literals are consumed as
 # configMapKeyRef env vars, which a pod reads once at startup, so a stable name
